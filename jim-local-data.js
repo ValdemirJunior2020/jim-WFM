@@ -3,7 +3,7 @@
 'use strict';
 const DB='jimwfm-local-handle-v1',HANDLE_KEY='chosen-directory',AUTO_KEY='jimwfm-local-autosave-v1',STORAGE_KEY='jimwfm-local-activity-v1';
 const DIRS=['Uploads','Historical-Data','Dashboard-Settings','Backups','Exports','Logs'];
-let root=null,linked=false,lastSaved=null,status='Folder not linked',pending=Promise.resolve(),uploadCounts=0,booted=false;
+let root=null,linked=false,lastSaved=null,status='Folder not linked',pending=Promise.resolve(),uploadCounts=0,booted=false,remembered=false;
 let enabled=localStorage.getItem(AUTO_KEY)!=='false',waiting=false;
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
 const stamp=()=>new Date().toISOString().replace(/[:.]/g,'-');
@@ -20,7 +20,11 @@ function openDB(){
  });
 }
 async function storeHandle(h){
- try{const db=await openDB();await new Promise((resolve,reject)=>{const t=db.transaction('handles','readwrite');t.objectStore('handles').put(h,HANDLE_KEY);t.oncomplete=resolve;t.onerror=()=>reject(t.error)});db.close()}catch(e){console.warn('Cannot remember folder selection across browser restarts:',e)}
+ try{
+  const db=await openDB();
+  await new Promise((resolve,reject)=>{const t=db.transaction('handles','readwrite');t.objectStore('handles').put(h,HANDLE_KEY);t.oncomplete=resolve;t.onerror=()=>reject(t.error);t.onabort=()=>reject(t.error)});
+  db.close();remembered=true;return true;
+ }catch(e){remembered=false;console.warn('Cannot remember folder selection across browser restarts:',e);return false}
 }
 async function loadHandle(){
  try{const db=await openDB();const h=await new Promise((resolve,reject)=>{const req=db.transaction('handles','readonly').objectStore('handles').get(HANDLE_KEY);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)});db.close();return h||null}catch{return null}
@@ -74,27 +78,55 @@ async function saveNow(){
  try{await enqueue(()=>doSave('Save Everything Now'));return true}catch{return false}
 }
 async function prepareFolder(h){
+ root=h;
+ // Create the user-authorized subfolders without altering any existing content.
  for(const name of DIRS)await h.getDirectoryHandle(name,{create:true});
- root=h;linked=true;await storeHandle(h);
- notice('Folder linked — saving locally','success');
+ linked=true;
+ const stored=await storeHandle(h);
  record('Local folder linked: '+h.name);
+ notice(stored?'Saved folder: '+h.name+' — Auto Save ready':'Connected for this visit, but the browser could not remember the folder. Allow site storage for persistence.',stored?'success':'warning');
  return saveNow();
 }
+function pickerError(error){
+ const name=String(error?.name||''),message=String(error?.message||error||'Unknown error');
+ if(name==='AbortError')return; // User dismissed the chooser.
+ let explanation='Could not open the folder chooser: '+message;
+ if(name==='SecurityError'||name==='NotAllowedError'||name==='InvalidStateError')
+  explanation='The browser blocked folder access. Open https://hp-wfm.netlify.app directly in Chrome or Edge (not inside a preview/iframe), then click Choose My Folder again. Browser or company policy may restrict file access.';
+ notice(explanation,'error');
+ // Make blocked permissions obvious rather than looking like an inert button.
+ if(typeof window.alert==='function')window.alert(explanation);
+}
 async function chooseFolder(forceNew=false){
- if(!canPick()){notice('Folder access needs recent Chrome or Edge on HTTPS','warning');return false}
  try{
-  if(!forceNew&&root&&!linked&&typeof root.requestPermission==='function'){
-   const p=await root.requestPermission({mode:'readwrite'});
-   if(p==='granted')return prepareFolder(root);
+  // Reuse the folder handle stored in IndexedDB from previous visits. Do NOT open a second picker.
+  if(!forceNew&&root){
+   if(linked&&await granted(root))return saveNow();
+   if(typeof root.requestPermission==='function'){
+    // Prompt from the direct user click: Chromium requires a user gesture for this request.
+    const permission=await root.requestPermission({mode:'readwrite'});
+    if(permission==='granted')return prepareFolder(root);
+    throw Object.assign(new Error('Write access was not granted for '+root.name),{name:'NotAllowedError'});
+   }
   }
-  const h=await window.showDirectoryPicker({id:'jim-wfm-data',mode:'readwrite',startIn:'documents'});
+  if(!canPick()){
+   const message='Folder picking is unavailable in this browser. Open https://hp-wfm.netlify.app directly in the latest Chrome or Edge on Windows, then click Choose My Folder. The folder stays selected in this browser profile.';
+   notice(message,'warning');
+   if(typeof window.alert==='function')window.alert(message);
+   return false;
+  }
+  // IMPORTANT: call the native picker immediately inside the click handler.
+  // Do not await IndexedDB, permissions, or other work before the picker opens.
+  const pickerPromise=window.showDirectoryPicker({id:'jim-wfm-data',mode:'readwrite',startIn:'documents'});
+  const h=await pickerPromise;
   if(!h)return false;
-  if(!await granted(h)&&await h.requestPermission({mode:'readwrite'})!=='granted')throw Error('Folder permission not granted');
-  return prepareFolder(h);
- }catch(e){
-  if(e?.name!=='AbortError')notice('Folder not linked: '+(e.message||e),'error');
-  return false;
- }
+  // User selecting a folder with mode=readwrite grants write permission in supported Chromium.
+  if(!await granted(h)){
+   const result=await h.requestPermission?.({mode:'readwrite'});
+   if(result!=='granted')throw Object.assign(new Error('Write permission was not granted'),{name:'NotAllowedError'});
+  }
+  return await prepareFolder(h);
+ }catch(e){pickerError(e);return false}
 }
 async function archiveFiles(files){
  if(!root||!linked||!files?.length)return;
@@ -152,14 +184,14 @@ function toggleAuto(){
  notice(enabled?'Auto Save enabled':'Auto Save turned off','info');
 }
 function statusInfo(){
- return {linked,enabled,folder:root?.name||null,lastSaved,status,canPick:canPick(),uploads:uploadCounts};
+ return {linked,enabled,folder:root?.name||null,remembered,lastSaved,status,canPick:canPick(),uploads:uploadCounts};
 }
 function render(){
  const s=statusInfo(),isSaving=s.linked&&s.enabled;
  return '<div class="headrow"><div><div class="eyebrow">TOOLS & SETTINGS / PRIVATE COMPUTER STORAGE</div><h1>Jim’s Local Data Manager</h1><p>Store Tableau reports, dashboard changes, backups and exports in a folder Jim chooses on his own computer.</p></div></div>'+
  '<section class="panel local-manager-card"><div class="local-manager-top"><span class="local-manager-glow" aria-hidden="true"></span><div class="local-manager-head"><div class="local-manager-icon">✦</div><div><div class="panel-title">My Computer Save Center</div><div class="panel-sub">'+(s.linked?'Folder linked: '+esc(s.folder):'No computer folder selected yet')+'</div></div></div><span class="local-manager-badge '+(isSaving?'linked':'')+'">'+(isSaving?'AUTO SAVE ON':s.linked?'AUTO SAVE OFF':'FOLDER NOT LINKED')+'</span></div>'+
- '<p class="local-manager-state" aria-live="polite">'+esc(s.status)+(s.lastSaved?' · Last saved '+new Date(s.lastSaved).toLocaleString():'')+'</p>'+
- '<div class="local-manager-actions"><button class="btn primary" data-action="local-choose">'+(s.folder?'Reconnect Folder':'Choose My Folder')+'</button><button class="btn" data-action="local-change-folder">Change Folder</button><button class="btn" data-action="local-save" '+(!s.linked?'disabled':'')+'>Save Everything Now</button><button class="btn" data-action="local-restore" '+(!s.linked?'disabled':'')+'>Restore Latest Backup</button><button class="btn" data-action="local-download">Download Backup</button><button class="btn" data-action="local-upload-backup">Import Backup File</button><button class="btn" data-action="local-toggle-auto">'+(s.enabled?'Turn Auto Save Off':'Turn Auto Save On')+'</button></div>'+
+ '<p class="local-manager-state" aria-live="polite">'+esc(s.status)+(s.lastSaved?' · Last saved '+new Date(s.lastSaved).toLocaleString():'')+'</p>'+'<p class="local-manager-permanence">'+(s.folder?'Remembered folder: <strong>'+esc(s.folder)+'</strong>. '+(s.linked?'Files will be saved here while access is granted.':'Click <strong>Reconnect Saved Folder</strong> to reauthorize this same location without selecting it again.'):'Choose a folder on your computer once. This browser remembers it for later visits; it may ask to authorize access again.')+'</p>'+
+ '<div class="local-manager-actions"><button class="btn primary" data-action="local-choose">'+(s.linked?'Save to Selected Folder':s.folder?'Reconnect Saved Folder':'Choose My Folder')+'</button><button class="btn" data-action="local-change-folder">Change Folder</button><button class="btn" data-action="local-save" '+(!s.linked?'disabled':'')+'>Save Everything Now</button><button class="btn" data-action="local-restore" '+(!s.linked?'disabled':'')+'>Restore Latest Backup</button><button class="btn" data-action="local-download">Download Backup</button><button class="btn" data-action="local-upload-backup">Import Backup File</button><button class="btn" data-action="local-toggle-auto">'+(s.enabled?'Turn Auto Save Off':'Turn Auto Save On')+'</button></div>'+
  '<input type="file" id="local-backup-input" accept=".json" hidden/>'+
  '<div class="local-manager-folders">'+DIRS.map(n=>'<span>'+esc(n)+'</span>').join('')+'</div>'+
  '<div class="notice local-manager-notice">Browser folder access requires a supported Chrome or Edge browser over HTTPS. You must grant write permission; the browser may ask again. Until linked, Jim WFM keeps using its existing browser storage. If file saving fails, the status changes to a warning. This page cannot save the private password vault or files from other applications.</div>'+
@@ -169,9 +201,9 @@ async function init(){
  if(booted)return;booted=true;
  const found=await loadHandle();
  if(!found)return;
- root=found;
- if(await granted(found)){linked=true;notice('Folder permission active','success')}
- else notice('Previously selected folder needs permission. Click Reconnect Folder.','warning');
+ root=found;remembered=true;
+ if(await granted(found)){linked=true;notice('Saved folder '+found.name+' ready for Auto Save','success')}
+ else notice('Saved folder '+found.name+' remembered. Click Reconnect Saved Folder once if the browser asks for permission.','warning');
 }
 window.JimLocalData={init,render,chooseFolder,saveNow,changed,archiveFiles,archiveExport,restoreLatest,restoreJSON,exportBackup,toggleAuto,statusInfo,notice};
 window.addEventListener('DOMContentLoaded',()=>{init().catch(()=>{})});
