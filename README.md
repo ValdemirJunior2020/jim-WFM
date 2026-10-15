@@ -49,6 +49,8 @@ These five open source tools were considered from your collection: **Ollama**, *
 
 ## Publish via Netlify
 
+[Deploy this GitHub repository to Netlify](https://app.netlify.com/start/deploy?repository=https://github.com/ValdemirJunior2020/jim-WFM)
+
 The root `netlify.toml` builds a `dist/` folder containing **only** the four static frontend files; the local backend and its configuration are not publicly published. Connect the GitHub repository `ValdemirJunior2020/jim-WFM` in **Netlify → Add new project → Import an existing project** and select `main`. The build uses only standard shell tools, so no package installation is needed. A site is only live once Netlify confirms a successful deploy.
 
 Suggested Cloudflare DNS: `wfm.hotelplannerqa.com` as a CNAME targeting the confirmed Netlify domain, configured in both Netlify Domain Management and Cloudflare DNS. **Do not change root `hotelplannerqa.com` or any existing app without permission.** The local Ollama bridge is a separate origin and is not hosted on Netlify.
