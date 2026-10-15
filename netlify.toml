@@ -1,5 +1,5 @@
 [build]
-  command = "mkdir -p dist && cp index.html app.js styles.css favicon.svg dist/"
+  command = "mkdir -p dist && cp index.html app.js styles.css favicon.svg jim-local-data.js dist/"
   publish = "dist"
 
 [[redirects]]
@@ -19,3 +19,23 @@
   for = "/app.js"
   [headers.values]
     Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "no-store, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-store, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/jim-local-data.js"
+  [headers.values]
+    Cache-Control = "no-cache, must-revalidate"
+
+[[headers]]
+  for = "/styles.css"
+  [headers.values]
+    Cache-Control = "no-cache, must-revalidate"
