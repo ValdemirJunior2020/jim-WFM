@@ -381,6 +381,7 @@ if(action==='local-save'){window.JimLocalData.saveNow();return}
 if(action==='local-restore'){window.JimLocalData.restoreLatest();return}
 if(action==='local-download'){window.JimLocalData.exportBackup();return}
 if(action==='local-list'){window.JimLocalData.listSaved();return}
+if(action==='local-download-all'){window.JimLocalData.downloadAll();return}
 if(action==='local-download-file'){window.JimLocalData.downloadSaved(b.dataset.path);return}
 if(action==='local-upload-backup'){$('local-backup-input')?.click();return}
 if(action==='local-toggle-auto'){window.JimLocalData.toggleAuto();render();return}
