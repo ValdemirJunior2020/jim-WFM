@@ -129,42 +129,79 @@ async function saveNow(){
  if(!ready){notice(warning||'Browser storage unavailable','error');return false}
  try{return await enqueue(()=>saveInternal('Save Everything Now'))}catch{return false}
 }
-async function chooseFolder(forceNew=false){
+async function chooseFolder(){
+ // A remembered handle can refer to a Windows-protected directory. Never try to silently
+ // reopen that stale handle or await its permission check before invoking the picker.
+ // Call the picker immediately from Jim's click so the browser keeps user activation.
  if(!canPick()){
-  warning='Windows folder mirroring requires Chrome or Edge. Automatic private saving is still running.';
-  notice(warning,'warning');return false;
+  notice('Windows folder selection needs Chrome or Edge. Automatic browser saving remains active; use Download Everything (.zip) for a Windows copy.','warning');
+  return false;
  }
  try{
-  // For a previously selected location, ask permission from a direct click, not from page load.
-  if(!forceNew&&external){
-   if(await hasPermission(external)){linked=true;return saveNow()}
-   if(typeof external.requestPermission==='function'){
-    if(await external.requestPermission({mode:'readwrite'})==='granted')return connectExternal(external);
-   }
+  const picking=window.showDirectoryPicker({mode:'readwrite',id:'jim-wfm-mirror',startIn:'documents'});
+  const chosen=await picking;
+  if(!chosen)return false;
+  if(!await hasPermission(chosen)){
+   // Do not call a second, delayed requestPermission: it may fail without activation.
+   throw Error('Windows did not grant write permission. Select a normal folder inside Documents, not the Downloads root or another protected folder.');
   }
-  // Browser deliberately refuses protected roots like Downloads. Pick a normal child folder instead.
-  // This picker MUST be invoked before any await when this is a new selection.
-  const selection=window.showDirectoryPicker({mode:'readwrite',id:'jim-wfm-mirror',startIn:'downloads'});
-  const folder=await selection;
-  if(!folder)return false;
-  if(!await hasPermission(folder)&&await folder.requestPermission?.({mode:'readwrite'})!=='granted')throw Error('Folder write access not granted');
-  return connectExternal(folder);
+  return await connectExternal(chosen);
  }catch(e){
-  if(e?.name!=='AbortError'){
-   warning='Windows blocked that folder (Downloads itself is protected). Automatic saving still works in Jim WFM. Choose a normal subfolder if a visible copy is needed.';
-   notice(warning,'warning');
+  if(e?.name==='AbortError'){
+   notice('No Windows folder selected. Automatic browser saving continues normally.','info');
+   return false;
   }
+  const details=String(e?.message||e||'Folder access blocked');
+  warning='Windows folder not connected: '+details+'. Try a normal folder within Documents. Jim WFM is still saving automatically in browser storage.';
+  notice(warning,'warning');
   return false;
  }
 }
-async function connectExternal(folder){
- external=folder;linked=true;
- for(const name of DIRS)await folder.getDirectoryHandle(name,{create:true});
- await rememberFolder(folder);
- record('Linked optional Windows folder '+folder.name);
- await saveNow();
- notice('Windows folder linked: '+folder.name+'; automatic browser saving stays on','success');
- return true;
+async function copyExistingToWindows(){
+ if(!ready||!linked||!external)return 0;
+ let copied=0;
+ for(const folder of DIRS){
+  let files=[];
+  if(backend==='private-filesystem'){
+   const dir=await internal.getDirectoryHandle(folder,{create:true});
+   for await(const [name,h] of dir.entries())if(h.kind==='file')files.push({name,body:await h.getFile()});
+  }else{
+   const keys=await dbAction('files','readonly',st=>st.getAllKeys());
+   for(const key of keys.filter(k=>k.startsWith(folder+'/')))
+    files.push({name:key.slice(folder.length+1),body:await dbAction('files','readonly',st=>st.get(key))});
+  }
+  for(const f of files){
+   if(!linked)throw Error('Write permission was interrupted');
+   if(copied>=500)throw Error('Copy limit reached; use Download Everything (.zip) for the rest');
+   const dest=await external.getDirectoryHandle(folder,{create:true});
+   const handle=await dest.getFileHandle(safeName(f.name),{create:true});
+   const writer=await handle.createWritable();
+   try{await writer.write(f.body);await writer.close()}catch(e){try{await writer.abort()}catch{}throw e}
+   copied++;
+  }
+ }
+ return copied;
+}
+async function connectExternal(chosen){
+ // Keep the current folder until the replacement is fully authorized and validated.
+ for(const name of DIRS)await chosen.getDirectoryHandle(name,{create:true});
+ const previous=external,previousLinked=linked,previousRemembered=remembered;
+ external=chosen;linked=true;
+ try{
+  const copies=await copyExistingToWindows();
+  const saved=await saveNow();
+  if(!saved||!linked)throw Error('Could not save to the selected Windows folder');
+  const canRemember=await rememberFolder(chosen);
+  record('Windows folder selected: '+chosen.name+'; copied '+copies+' existing files');
+  warning='';
+  notice('Windows folder connected: '+chosen.name+'. Copied '+copies+' existing saved files.'+(canRemember?'':' Browser may ask to select it on a future visit.'),'success');
+  return true;
+ }catch(e){
+  external=previous;linked=previousLinked;remembered=previousRemembered;
+  warning='The selected Windows folder could not be used: '+String(e?.message||e)+'. Automatic browser saving is still active.';
+  notice(warning,'warning');
+  return false;
+ }
 }
 async function archiveFiles(files){
  if(!files?.length)return;
@@ -332,7 +369,7 @@ function render(){
  '<input type="file" id="local-backup-input" accept=".json" hidden/>'+
  '<div class="local-manager-folders">'+DIRS.map(n=>'<span>'+esc(n)+'</span>').join('')+'</div>'+
  (filesView?'<div class="local-saved-files"><strong>Saved on this browser ('+filesView.length+')</strong>'+ (rows||'<p>No saved files yet.</p>')+'</div>':'')+
- '<div class="local-manager-external"><div><strong>Optional Windows folder copy</strong><p>To also see the files directly in File Explorer, choose a normal folder such as Documents/Jim-WFM-Data. Windows blocks websites from selecting protected system folders like Downloads itself.</p><p>'+(s.folder?'Remembered folder: <strong>'+esc(s.folder)+'</strong> '+(s.linked?'(connected)':'(permission needed)'):'No Windows folder connected; automatic browser saving continues.')+'</p></div><div class="local-manager-actions"><button class="btn" data-action="local-choose">'+(s.folder?'Reconnect Windows Folder':'Also Save to a Windows Folder')+'</button><button class="btn" data-action="local-change-folder">Change Windows Folder</button></div></div>'+
+ '<div class="local-manager-external"><div><strong>Optional Windows folder copy</strong><p>To see your saved files directly in File Explorer, select a regular folder within Documents. Jim WFM copies existing saved files into it. Chrome cannot select the protected Downloads folder itself.</p><p>'+(s.linked?'Windows copy connected: <strong>'+esc(s.folder)+'</strong>':s.folder?'Your previously selected Windows folder is not authorized. Use Choose Windows Folder to select a permitted location.':'No Windows folder linked. Automatic browser saving and Download Everything (.zip) work without one.')+'</p></div><div class="local-manager-actions"><button class="btn" data-action="local-choose">'+(s.linked?'Change Windows Folder':'Choose Windows Folder (optional)')+'</button></div></div>'+
  '<div class="notice local-manager-notice">Private browser files survive normal browser restarts in this browser profile, but deleting site data, using Incognito, or storage eviction can remove them. Download a backup periodically. Uploaded source spreadsheets may contain employee information; keep downloads in an approved private folder.</div>'+
  '</section><section class="panel section-gap"><div class="panel-title">Automatically saved items</div><p>All selected uploaded Excel files, 30-day and historical aggregates, dashboard edits, local configuration, shift and target changes, private backups, exports, and logs. Browser-only demo data is separate from real Tableau history.</p></section>';
 }
