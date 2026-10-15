@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.netlify/
+.DS_Store
+*.log
+server/backups/
+server/audit-log.jsonl
+server/requests/
+
+dist/
