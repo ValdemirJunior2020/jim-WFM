@@ -361,3 +361,15 @@
   .sidebar button.nav-item[data-id="local-data"]::before,
   .local-manager-actions button[data-action="local-choose"]::before{animation:none;left:28%;opacity:.45}
 }
+
+
+/* Excel importer v2.1: nonblocking per-file results */
+.service-import-versions{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.service-import-versions .pill:last-child{border:1px solid #4a9383;color:#a9edcc;background:#123d36;font-size:10px}
+.service-import-results{margin-top:15px;padding:14px 16px;background:linear-gradient(120deg,#102d36,#132739);border:1px solid #426178;border-radius:12px;display:grid;gap:8px;max-height:355px;overflow:auto}
+.service-import-result-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;color:#e8f7ff;font-size:13px}
+.service-import-result-heading span{font-size:11px;color:#b4d2e6}
+.service-import-ok,.service-import-skip{padding:10px 12px;line-height:1.55;font-size:12px;border-radius:8px;overflow-wrap:anywhere}
+.service-import-ok{background:#163c32;border:1px solid #347452;color:#b3fad2}
+.service-import-skip{background:#3b3025;border:1px solid #8a6449;color:#ffdab0}
+.service-import-results .footnote{margin:4px 0 0}
