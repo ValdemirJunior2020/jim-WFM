@@ -10,6 +10,7 @@ import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { handleRoster, serveRosterUi } from './roster.mjs';
 
 const current=dirname(fileURLToPath(import.meta.url));
 const root=resolve(current,'..');
@@ -47,8 +48,10 @@ async function applyDraft(id){const draft=drafts.get(id);if(!draft||Date.now()-d
 createServer(async(req,res)=>{const origin=req.headers.origin||'';if(req.method==='OPTIONS'){if(!ORIGINS.includes(origin))return error(res,403,'Origin not allowed',origin);return respond(res,200,{ok:true},origin)}
  if(origin&&!ORIGINS.includes(origin))return error(res,403,'Origin not allowed',origin);
  if(req.method==='GET'&&req.url==='/api/health')return respond(res,200,await health(),origin);
+ if(req.method==='GET'&&req.url==='/roster')return serveRosterUi(res);
  if(req.headers.authorization!==`Bearer ${TOKEN}`)return error(res,401,'Admin token required',origin);
- try{if(req.method==='POST'&&req.url==='/api/changes/draft'){const b=await jsonBody(req);const prompt=String(b.prompt||'').trim(),file=String(b.file||'');if(prompt.length<6||prompt.length>3000)throw Error('Prompt must be 6–3000 characters');return respond(res,200,await makeDraft(prompt,file),origin)}
+ try{if(req.url?.startsWith('/api/roster'))return await handleRoster(req,res,origin);
+ if(req.method==='POST'&&req.url==='/api/changes/draft'){const b=await jsonBody(req);const prompt=String(b.prompt||'').trim(),file=String(b.file||'');if(prompt.length<6||prompt.length>3000)throw Error('Prompt must be 6–3000 characters');return respond(res,200,await makeDraft(prompt,file),origin)}
  if(req.method==='POST'&&req.url==='/api/changes/apply'){const b=await jsonBody(req);if(b.confirm!=='APPROVE')throw Error('Explicit approval required');return respond(res,200,await applyDraft(String(b.id||'')),origin)}
  return error(res,404,'Not found',origin)}catch(e){await audit({action:'error',message:String(e.message).slice(0,500)}).catch(()=>{});return error(res,400,String(e.message).slice(0,500),origin)}
 }).listen(PORT,HOST,()=>console.log(`Jim WFM local AI bridge ready at http://${HOST}:${PORT}; allowed origins: ${ORIGINS.length}. Never expose directly.`));
