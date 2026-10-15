@@ -178,8 +178,8 @@ async function archiveFiles(files){
    await write('Uploads',prefix+'_'+safeName(f.name),f);
    uploads++;
   }
-  record(originals.length+' original Tableau report(s) archived');
-  if(enabled)await saveInternal('Imported original Tableau workbooks');
+  record(originals.length+' uploaded file(s) archived');
+  if(enabled)await saveInternal('Imported and selected uploaded workbooks');
  }).catch(()=>{});
 }
 function archiveExport(filename,body,mime){
@@ -220,6 +220,64 @@ function downloadBlob(name,blob){
  a.href=url;a.download=safeName(name);document.body.appendChild(a);a.click();a.remove();
  setTimeout(()=>URL.revokeObjectURL(url),10000);
 }
+
+/* Portable ZIP export with all locally saved files (no network, no dependencies). */
+function crc32(bytes){
+ let c=0xffffffff;
+ for(const b of bytes){c^=b;for(let k=0;k<8;k++)c=(c>>>1)^((c&1)?0xedb88320:0)}
+ return (c^0xffffffff)>>>0;
+}
+function zipHeader(signature,size){
+ const u=new Uint8Array(size),v=new DataView(u.buffer);
+ v.setUint32(0,signature,true);return {u,v};
+}
+async function downloadAll(){
+ if(!ready)await init();
+ if(!ready){notice('Local storage unavailable; nothing can be exported','error');return false}
+ notice('Preparing a complete local ZIP backup…','info');
+ try{
+  const textEncoder=new TextEncoder(),chunks=[],central=[];
+  let offset=0,count=0,centralSize=0,totalBytes=0;
+  for(const folder of DIRS){
+   const names=[];
+   if(backend==='private-filesystem'){
+    const directory=await internal.getDirectoryHandle(folder,{create:true});
+    for await(const [filename,handle] of directory.entries())if(handle.kind==='file')names.push({name:filename,file:await handle.getFile()});
+   }else{
+    const keys=await dbAction('files','readonly',st=>st.getAllKeys());
+    for(const path of keys.filter(k=>k.startsWith(folder+'/'))){
+      const name=path.slice(folder.length+1);
+      names.push({name,file:await dbAction('files','readonly',st=>st.get(path))});
+    }
+   }
+   for(const {name,file} of names){
+    if(!file)continue;
+    const blob=file instanceof Blob?file:new Blob([file]);
+    totalBytes+=blob.size;
+    if(totalBytes>120*1024*1024||count>=500)throw Error('Backup is too large for one ZIP. Download individual files using View Saved Files.');
+    const bytes=new Uint8Array(await blob.arrayBuffer());
+    const path=textEncoder.encode('Jim-WFM-Data/'+folder+'/'+name);
+    const crc=crc32(bytes),len=bytes.byteLength;
+    const {u:lh,v:lv}=zipHeader(0x04034b50,30);
+    lv.setUint16(4,20,true);lv.setUint16(8,0,true);lv.setUint32(14,crc,true);lv.setUint32(18,len,true);lv.setUint32(22,len,true);lv.setUint16(26,path.length,true);
+    chunks.push(lh,path,bytes);
+    const {u:ch,v:cv}=zipHeader(0x02014b50,46);
+    cv.setUint16(4,20,true);cv.setUint16(6,20,true);cv.setUint32(16,crc,true);
+    cv.setUint32(20,len,true);cv.setUint32(24,len,true);cv.setUint16(28,path.length,true);cv.setUint32(42,offset,true);
+    central.push(ch,path);centralSize+=46+path.length;
+    offset+=30+path.length+len;count++;
+   }
+  }
+  const {u:end,v:ev}=zipHeader(0x06054b50,22);
+  ev.setUint16(8,count,true);ev.setUint16(10,count,true);ev.setUint32(12,centralSize,true);ev.setUint32(16,offset,true);
+  const zip=new Blob([...chunks,...central,end],{type:'application/zip'});
+  downloadBlob('Jim-WFM-Everything-'+stamp()+'.zip',zip);
+  notice('Complete ZIP download started: '+count+' saved files, including imported Excel originals.','success');
+  record('Downloaded all '+count+' files as ZIP');
+  return true;
+ }catch(e){notice('ZIP export failed: '+String(e.message||e),'error');return false}
+}
+
 function exportBackup(){
  downloadBlob('Jim-WFM-Backup-'+stamp()+'.json',new Blob([JSON.stringify(readState(),null,2)],{type:'application/json'}));
  record('Downloaded dashboard and history backup to computer');
@@ -270,13 +328,13 @@ function render(){
  '<section class="panel local-manager-card"><div class="local-manager-top"><div class="local-manager-head"><div class="local-manager-icon">✦</div><div><div class="panel-title">Automatic Local Save Center</div><div class="panel-sub">'+(s.ready?'Jim-WFM-Data / '+DIRS.length+' folders created automatically': 'Preparing secure local storage…')+'</div></div></div><span class="local-manager-badge '+(auto?'linked':'')+'">'+(auto?'AUTO SAVE ON':s.ready?'AUTO SAVE PAUSED':'STORAGE NOT READY')+'</span></div>'+
  '<p class="local-manager-state" aria-live="polite">'+esc(s.status)+(s.lastSaved?' · Last saved '+new Date(s.lastSaved).toLocaleString():'')+'</p>'+
  '<p class="local-manager-permanence">'+(s.ready?'Jim WFM automatically creates and saves its own local data without choosing a Windows system folder. This is private browser storage, not a visible folder under Downloads.':'Your browser must allow this website to keep site data.')+'</p>'+
- '<div class="local-manager-actions"><button class="btn primary" data-action="local-save">Save Everything Now</button><button class="btn" data-action="local-list">View Saved Files</button><button class="btn" data-action="local-download">Download Backup to Computer</button><button class="btn" data-action="local-restore">Restore Latest Backup</button><button class="btn" data-action="local-upload-backup">Import Backup File</button><button class="btn" data-action="local-toggle-auto">'+(s.enabled?'Turn Auto Save Off':'Turn Auto Save On')+'</button></div>'+
+ '<div class="local-manager-actions"><button class="btn primary" data-action="local-save">Save Everything Now</button><button class="btn" data-action="local-list">View Saved Files</button><button class="btn" data-action="local-download-all">Download Everything (.zip)</button><button class="btn" data-action="local-download">Download Dashboard Backup (.json)</button><button class="btn" data-action="local-restore">Restore Latest Backup</button><button class="btn" data-action="local-upload-backup">Import Backup File</button><button class="btn" data-action="local-toggle-auto">'+(s.enabled?'Turn Auto Save Off':'Turn Auto Save On')+'</button></div>'+
  '<input type="file" id="local-backup-input" accept=".json" hidden/>'+
  '<div class="local-manager-folders">'+DIRS.map(n=>'<span>'+esc(n)+'</span>').join('')+'</div>'+
  (filesView?'<div class="local-saved-files"><strong>Saved on this browser ('+filesView.length+')</strong>'+ (rows||'<p>No saved files yet.</p>')+'</div>':'')+
  '<div class="local-manager-external"><div><strong>Optional Windows folder copy</strong><p>To also see the files directly in File Explorer, choose a normal folder such as Documents/Jim-WFM-Data. Windows blocks websites from selecting protected system folders like Downloads itself.</p><p>'+(s.folder?'Remembered folder: <strong>'+esc(s.folder)+'</strong> '+(s.linked?'(connected)':'(permission needed)'):'No Windows folder connected; automatic browser saving continues.')+'</p></div><div class="local-manager-actions"><button class="btn" data-action="local-choose">'+(s.folder?'Reconnect Windows Folder':'Also Save to a Windows Folder')+'</button><button class="btn" data-action="local-change-folder">Change Windows Folder</button></div></div>'+
  '<div class="notice local-manager-notice">Private browser files survive normal browser restarts in this browser profile, but deleting site data, using Incognito, or storage eviction can remove them. Download a backup periodically. Uploaded source spreadsheets may contain employee information; keep downloads in an approved private folder.</div>'+
- '</section><section class="panel section-gap"><div class="panel-title">Automatically saved items</div><p>Original successfully imported Tableau Excel reports, 30-day and historical aggregates, dashboard edits, local configuration, shift and target changes, private backups, exports, and logs. Browser-only demo data is separate from real Tableau history.</p></section>';
+ '</section><section class="panel section-gap"><div class="panel-title">Automatically saved items</div><p>All selected uploaded Excel files, 30-day and historical aggregates, dashboard edits, local configuration, shift and target changes, private backups, exports, and logs. Browser-only demo data is separate from real Tableau history.</p></section>';
 }
 async function init(){
  if(booted)return;
@@ -292,6 +350,6 @@ async function init(){
   if(enabled)enqueue(()=>saveInternal('Startup autosave')).catch(()=>{});
  }else notice(warning||'Local storage unavailable','error');
 }
-window.JimLocalData={init,render,chooseFolder,saveNow,changed,archiveFiles,archiveExport,restoreLatest,restoreJSON,exportBackup,toggleAuto,statusInfo,notice,listSaved,downloadSaved};
+window.JimLocalData={init,render,chooseFolder,saveNow,changed,archiveFiles,archiveExport,restoreLatest,restoreJSON,exportBackup,toggleAuto,statusInfo,notice,listSaved,downloadSaved,downloadAll};
 window.addEventListener('DOMContentLoaded',()=>{init().catch(e=>notice('Storage setup failed: '+String(e.message||e),'error'))});
 })();
