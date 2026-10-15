@@ -22,6 +22,13 @@ async def main():
         await page.add_script_tag(content=(ROOT/'app.js').read_text(encoding='utf-8'))
         assert await page.locator('h1').inner_text()=='Workforce Command Center'
         assert await page.locator('.stat-card').count()==4
+        assert await page.locator('button[data-action="nav"][data-id="guide"]').count()==2
+        await page.locator('.sidebar button[data-id="guide"]').click()
+        assert await page.locator('h1').inner_text()=='How to Use Jim WFM AI'
+        assert await page.locator('.guide-card').count()==6
+        await page.locator('.guide-card button[data-id="agents"]').click()
+        assert await page.locator('h1').inner_text()=='Live Agent Status'
+        await page.locator('.sidebar button[data-id="overview"]').click()
         assert 'NaN' not in await page.locator('.hero-right').inner_text()
         await page.screenshot(path=str(ROOT/'preview.png'),full_page=True)
         await page.get_by_role('button',name='Live Agent Status').click()

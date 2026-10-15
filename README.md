@@ -7,7 +7,7 @@ A polished **zero-license-cost**, **API-key-free** workforce-management demonstr
 ## Preview in two minutes
 
 1. On Windows double-click **`START-DEMO.bat`**; it launches an optional local web server and opens the dashboard. Alternatively open `index.html` in a normal desktop browser, or host this folder with `python -m http.server 4173`.
-2. Use the left navigation to view **Overview**, **Live Agent Status**, **Attendance & Shifts**, **Analytics & Reports**, **Super Admin AI Studio**, and **System Settings**.
+2. Select **How to Use** in the sidebar or top bar to open an interactive six-step walkthrough, then explore **Overview**, **Live Agent Status**, **Attendance & Shifts**, **Analytics & Reports**, **Super Admin AI Studio**, and **System Settings**.
 3. In **AI Studio**, try **“Change the colors to electric blue”**. Review and approve the request to change the demo theme.
 4. Update an example agent in the directory. The aggregate metrics refresh. Export a CSV of the synthetic results.
 
@@ -75,3 +75,7 @@ Suggested Cloudflare DNS: `wfm.hotelplannerqa.com` as a CNAME targeting the conf
 ## Licensing and attribution
 
 The original demonstration code in this repository may be used internally. Dependencies referenced as design options have their own licenses. No Synerion source code, assets, or nonpublic materials were copied into the project.
+
+## Built-in How to Use guide
+
+The sidebar and top bar link to **How to Use**, a guided interactive screen with six workflow examples, AI setup, safe change approval, and limitations of the browser-only demo. It requires no paid APIs or external documentation service.

@@ -18,3 +18,7 @@ test('code remains parseable with Node syntax checker',()=>{
 test('backend uses local host, admin-token length check, and allowlist',async()=>{
  const js=await read('server/index.mjs');assert.match(js,/127\.0\.0\.1/);assert.match(js,/TOKEN\.length<24/);assert.match(js,/ALLOWED_FILES/);assert.match(js,/APPROVE/);assert.doesNotMatch(js,/\beval\s*\(/);
 });
+
+test('built-in guide is discoverable and clearly labels the demo',async()=>{
+ const js=await read('app.js');assert.match(js,/\['guide','help','How to Use'\]/);assert.match(js,/function guide\(\)/);assert.match(js,/view==='guide'\?guide\(\)/);assert.match(js,/data-id="guide"/);assert.match(js,/browser-local/);
+});
