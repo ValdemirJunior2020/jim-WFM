@@ -373,3 +373,21 @@
 .service-import-ok{background:#163c32;border:1px solid #347452;color:#b3fad2}
 .service-import-skip{background:#3b3025;border:1px solid #8a6449;color:#ffdab0}
 .service-import-results .footnote{margin:4px 0 0}
+
+
+/* Automatic private local filesystem: files visible inside Jim WFM without using protected Windows folders */
+.local-manager-external{
+  margin-top:20px;padding:17px 18px;
+  border:1px solid rgba(132,185,173,.28);
+  border-radius:12px;background:rgba(9,29,38,.63);
+}
+.local-manager-external>div>strong{color:#cff8da;font-size:13px}
+.local-manager-external p{font-size:12px;line-height:1.6;color:#a8c9bf;margin:9px 0}
+.local-manager-external .local-manager-actions{margin:12px 0 0}
+.local-saved-files{display:grid;gap:7px;margin-top:18px;padding:14px;background:#0d2630;border:1px solid rgba(115,228,154,.25);border-radius:12px}
+.local-saved-files>strong{color:#c0f6d2;font-size:12px;margin-bottom:4px}
+.local-saved-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 9px;background:#132d37;border-radius:8px;font-size:11px;color:#b7d8c7;min-width:0}
+.local-saved-row span{min-width:0;overflow-wrap:anywhere}
+.local-saved-row .btn{white-space:nowrap;font-size:11px;padding:6px 10px}
+.local-manager-card .local-manager-badge.linked{border-color:#46d899;box-shadow:0 0 14px rgba(90,241,147,.21)}
+@media(max-width:580px){.local-saved-row{flex-direction:column;align-items:flex-start}.local-manager-external{padding:12px}}
