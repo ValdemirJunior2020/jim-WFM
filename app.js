@@ -7,7 +7,7 @@ const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const fmt=n=>Math.round(n).toLocaleString('en-US');
 const pct=(a,b)=>b>0?Math.round(100*a/b):0;
 const empty=()=>({version:1,centers:{},calls:{},updatedAt:null,sourceFiles:[]});
-let store;
+let store,lastImportResult=null;
 try{const s=JSON.parse(localStorage.getItem(KEY)||'null');store=s?.version===1&&s.centers&&s.calls?s:empty()}catch{store=empty()}
 const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(store));window.JimLocalData?.changed('Service history imported or updated')}catch{throw Error('Browser storage is full or disabled. Download a backup first.')}};
 const localISO=d=>[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
@@ -145,7 +145,11 @@ async function importFiles(files){
         const header=(rows[1]||[]).map(v=>String(v??'').trim().toLowerCase());
         const isCalls=header[0]==='day of created-at'&&header.filter(x=>x==='answered calls').length>=2;
         const isService=header.includes('grand total')&&rows.slice(2,35).some(row=>['available','on call','break','offline'].includes(String(row[2]||'').trim().toLowerCase()));
-        if(!isCalls&&!isService)throw Error('Not a supported service-status or TELUS call-activity export');
+        if(!isCalls&&!isService){
+          const sampleHead=rows.slice(0,5).flatMap(row=>row.filter(v=>typeof v==='string').map(v=>v.trim().toLowerCase()));
+          const roster=sampleHead.includes('first name')&&sampleHead.includes('last name');
+          throw Error(roster?'Agent roster detected — not a Tableau service-time report. Excluded from historical calculations.':'Unsupported workbook layout — not a Tableau Service or TELUS activity export. Excluded from historical calculations.');
+        }
         const parsed=isCalls?parseCalls(rows,file.name):parseUtilization(rows,file.name);
         report.push(file.name+': '+merge(next,parsed,file.name)+' dates imported');
       }else if(filename.endsWith('.json')){
@@ -161,7 +165,11 @@ async function importFiles(files){
     }
   }
   if(report.length){store=next;persist()}
-  return {imported:report,skipped};
+  lastImportResult={imported:report,skipped,when:new Date().toISOString()};
+  return lastImportResult;
+}
+function importError(message){
+  lastImportResult={imported:[],skipped:['Import could not finish: '+String(message||'Unknown error')],when:new Date().toISOString()};
 }
 function recent(o){const p=period();return Object.fromEntries(Object.entries(o||{}).filter(([d])=>d>=p.start&&d<=p.end))}
 function summary(filter){
@@ -189,9 +197,10 @@ function render(center){
   const byDay=s.days.map(d=>'<tr><td>'+esc(d.date)+'</td><td>'+fmt(d.onCall/60)+'</td><td>'+fmt(d.available/60)+'</td><td>'+pct(d.onCall,d.onCall+d.available)+'%</td><td>'+fmt(d.service)+'</td><td>'+fmt(d.outbound)+'</td></tr>').join('');
   const files=(store.sourceFiles||[]).slice(-5).map(x=>'<span class="pill">'+esc(x)+'</span>').join(' ');
   return '<div class="headrow"><div><div class="eyebrow">HISTORICAL WORKFORCE / PRIVATE BROWSER DATA</div><h1>Upload Service sheets</h1><p>Recorded status time and calls, not live telephony availability.</p></div></div>'+
-   '<section class="panel"><div class="panel-head"><div><div class="panel-title">Update Jim’s Service Data</div><div class="panel-sub">Rolling 30 calendar days: '+p.start+' to '+p.end+'</div></div><span class="pill">BROWSER ONLY</span></div>'+
+   '<section class="panel"><div class="panel-head"><div><div class="panel-title">Update Jim’s Service Data</div><div class="panel-sub">Rolling 30 calendar days: '+p.start+' to '+p.end+'</div></div><div class="service-import-versions"><span class="pill">BROWSER ONLY</span><span class="pill">IMPORTER v2.1</span></div></div>'+
    '<p class="section-gap">Choose Buwelo Service, Concentrix Service, WNS Service, Telus Utilization and TUS Service Agents Excel files. New imports <strong>replace overlapping days</strong> without double-counting.</p>'+
    '<div class="service-import-actions"><input type="file" id="service-files" accept=".xlsx,.json" multiple aria-label="Choose service Excel reports"><button class="btn primary" data-action="import-service">Import selected files</button><button class="btn" data-action="export-service">Export private JSON backup</button><button class="btn" data-action="export-service-csv">Export 30-day CSV</button><button class="btn danger" data-action="clear-service">Clear history</button></div>'+
+   (lastImportResult?'<div class="service-import-results" role="status" aria-live="polite"><div class="service-import-result-heading"><strong>File-by-file import results</strong><span>'+lastImportResult.imported.length+' imported · '+lastImportResult.skipped.length+' excluded</span></div>'+lastImportResult.imported.map(line=>'<div class="service-import-ok">✓ '+esc(line)+'</div>').join('')+lastImportResult.skipped.map(line=>'<div class="service-import-skip">ⓘ '+esc(line)+'</div>').join('')+'<p class="footnote">Excluded workbooks do not stop other reports. Their contents are not included in service totals.</p></div>':'')+
    '<p class="footnote">Runs locally in this browser, with no data upload to Netlify, Ollama or a server. Only daily center totals are stored. Employee names and IDs are discarded. Data is NOT synchronized to other computers. Keep your private backup.</p>'+
    (files?'<div class="service-source-list">Imported: '+files+'</div>':'')+'</section>'+
    (!has?'<section class="panel section-gap"><div class="panel-title">No historical reports imported</div><p>Upload your five Excel files or your private Jim WFM snapshot to see the real last-30-day metrics. This does not change demo live statuses.</p></section>':
@@ -207,7 +216,7 @@ function download(filename,body,mime){const blob=new Blob([body],{type:mime}),ur
 const backup=()=>download('jim-wfm-private-service-history.json',JSON.stringify(store,null,2),'application/json');
 function exportCSV(center){const s=summary(center),rows=[['Date','On Call Hours','Available Hours','Break Hours','Offline Hours','On-call Share Percent','TELUS Service Calls','TELUS Outbound Calls']];for(const d of s.days)rows.push([d.date,(d.onCall/60).toFixed(2),(d.available/60).toFixed(2),(d.break/60).toFixed(2),(d.offline/60).toFixed(2),pct(d.onCall,d.onCall+d.available),d.service,d.outbound]);download('jim-wfm-service-last-30-days.csv',rows.map(r=>r.join(',')).join('\r\n'),'text/csv')}
 function clear(){store=empty();localStorage.removeItem(KEY);window.JimLocalData?.changed('Service history cleared')}
-window.ServiceHistory={render,importFiles,backup,exportCSV,clear,summary,period};
+window.ServiceHistory={render,importFiles,importError,backup,exportCSV,clear,summary,period};
 })();
 
 /* Jim WFM AI — standalone static demonstration. No external APIs or employee data. */
@@ -374,7 +383,7 @@ if(action==='local-download'){window.JimLocalData.exportBackup();return}
 if(action==='local-upload-backup'){$('local-backup-input')?.click();return}
 if(action==='local-toggle-auto'){window.JimLocalData.toggleAuto();render();return}
 if(action==='download-report'){downloadReport();notify('Demo report downloaded');return}
-if(action==='import-service'){const files=Array.from($('service-files')?.files||[]);if(!files.length)return notify('Select one or more .xlsx or .json files');const el=b;el.disabled=true;el.textContent='Reading files...';window.ServiceHistory.importFiles(files).then(result=>{const successful=files.filter(f=>result.imported.some(line=>line.startsWith(f.name+':')));if(successful.length)window.JimLocalData?.archiveFiles(successful);render();notify('Imported '+result.imported.length+' report(s) · skipped '+result.skipped.length);window.alert('Service file results:\n\n'+(result.imported.length?'Imported:\n'+result.imported.join('\n'):'No supported files imported.')+(result.skipped.length?'\n\nSkipped (not imported):\n'+result.skipped.join('\n'):'')+'\n\nHistorical data was updated only for successfully imported files.')}).catch(e=>{el.disabled=false;el.textContent='Import selected files';notify('Import error: '+e.message);window.alert('Could not import service report: '+e.message)});return}
+if(action==='import-service'){const files=Array.from($('service-files')?.files||[]);if(!files.length)return notify('Select one or more .xlsx or .json files');const el=b;el.disabled=true;el.textContent='Reading files...';window.ServiceHistory.importFiles(files).then(result=>{const successful=files.filter(f=>result.imported.some(line=>line.startsWith(f.name+':')));if(successful.length)window.JimLocalData?.archiveFiles(successful);render();notify('Imported '+result.imported.length+' report(s) · excluded '+result.skipped.length+'. See details below upload controls.');}).catch(e=>{window.ServiceHistory.importError(e?.message||e);render();notify('Import issue — see results on Upload Service sheets.');});return}
 if(action==='export-service'){window.ServiceHistory.backup();notify('Private history backup downloaded');return}
 if(action==='export-service-csv'){window.ServiceHistory.exportCSV(center);notify('30-day CSV downloaded');return}
 if(action==='clear-service'){if(!window.confirm('Clear imported historical service data from this browser only? Export a backup first.'))return;window.ServiceHistory.clear();render();notify('Private historical data cleared');return}
