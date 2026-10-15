@@ -241,7 +241,7 @@
 .trend-help-icon{display:grid;place-items:center;width:23px;height:23px;border-radius:50%;border:1px solid #57baca;color:#a1f3ff;background:#153b53;font-size:14px;font-weight:900;cursor:help;box-shadow:0 0 10px #36c7f02d}
 .trend-help-icon:hover,.trend-help-icon:focus-visible{background:#2c5874;color:white;border-color:#b4eafe}
 .trend-help-content{position:absolute;left:0;top:calc(100% + 12px);width:min(365px,80vw);padding:17px 18px;background:#182234;color:#d7e8f8;border:1px solid #6875b7;border-radius:12px;box-shadow:0 17px 55px #000a,0 0 20px #6a50fa25;font-size:12px;line-height:1.56;z-index:50;visibility:hidden;opacity:0;pointer-events:none;transform:translateY(-5px);transition:opacity .13s,transform .13s}
-.trend-help:hover .trend-help-content,.trend-help:focus-within .trend-help-content{visibility:visible;opacity:1;pointer-events:auto;transform:translateY(0)}
+.trend-help:hover .trend-help-content,.trend-help:focus-within .trend-help-content,.trend-title:hover .trend-help-content,.trend-title:focus-within .trend-help-content{visibility:visible;opacity:1;pointer-events:auto;transform:translateY(0)}
 .trend-help-content strong{color:#f5f4ff;font-size:12px}
 .trend-help-content p{font-size:11px;color:#c1c9de;line-height:1.6;margin:8px 0 11px}
 .trend-help-content ul{padding-left:19px;margin:7px 0 11px;color:#e0e1fb}
