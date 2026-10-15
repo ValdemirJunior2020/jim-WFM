@@ -50,6 +50,7 @@ createServer(async(req,res)=>{const origin=req.headers.origin||'';if(req.method=
  if(req.method==='GET'&&req.url==='/api/health')return respond(res,200,await health(),origin);
  if(req.method==='GET'&&req.url==='/roster')return serveRosterUi(res);
  if(req.headers.authorization!==`Bearer ${TOKEN}`)return error(res,401,'Admin token required',origin);
+ if(req.method==='GET'&&req.url==='/api/auth-check')return respond(res,200,await health(),origin);
  try{if(req.url?.startsWith('/api/roster'))return await handleRoster(req,res,origin);
  if(req.method==='POST'&&req.url==='/api/changes/draft'){const b=await jsonBody(req);const prompt=String(b.prompt||'').trim(),file=String(b.file||'');if(prompt.length<6||prompt.length>3000)throw Error('Prompt must be 6–3000 characters');return respond(res,200,await makeDraft(prompt,file),origin)}
  if(req.method==='POST'&&req.url==='/api/changes/apply'){const b=await jsonBody(req);if(b.confirm!=='APPROVE')throw Error('Explicit approval required');return respond(res,200,await applyDraft(String(b.id||'')),origin)}
