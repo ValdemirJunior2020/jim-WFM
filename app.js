@@ -319,20 +319,34 @@ function trendPanel(){
      sum.on+=Number(now.onCall||0);sum.available+=Number(now.available||0);
      sum.oldOn+=Number(old.onCall||0);sum.oldAvailable+=Number(old.available||0);paired++;
    }
-   const ready=paired>=5,notices=[];let change=null;
+   const ready=paired>=5,notices=[];let change=null,previousShare=null,currentShare=null;
    if(!ready){missing.push(files[name]);notices.push('Needs '+(5-paired)+' more matching days from '+files[name]+'; upload a report covering both weeks.')}
    else{
-     change=100*sum.on/(sum.on+sum.available)-100*sum.oldOn/(sum.oldOn+sum.oldAvailable);
+     currentShare=100*sum.on/(sum.on+sum.available);
+     previousShare=100*sum.oldOn/(sum.oldOn+sum.oldAvailable);
+     change=currentShare-previousShare;
      const availChange=sum.oldAvailable>0?100*(sum.available-sum.oldAvailable)/sum.oldAvailable:null;
      if(Math.abs(change)>=5)notices.push('On Call share '+(change>0?'increased':'decreased')+' '+Math.abs(change).toFixed(1)+' percentage points versus the previous week.');
      if(availChange!==null&&Math.abs(availChange)>=20)notices.push('Available time '+(availChange>0?'increased':'decreased')+' '+Math.abs(availChange).toFixed(0)+'% on matched days. Investigate staffing or recording differences.');
      if(unpaired)notices.push(unpaired+' day-pairs could not be compared. Check missing Tableau records.');
    }
-   results.push({name,paired,ready,change,notices});
+   results.push({name,paired,ready,change,previousShare,currentShare,notices});
  }
  const required=names.map(n=>files[n]).concat(names.includes('Telus')?['TUS Service Agents.xlsx (optional for call counts)']:[]);
  const tooltip='<strong>What does this feature do?</strong><p>Compares two 7-day periods of On Call and Available status time from Tableau exports. At least five matching calendar days are needed for each center. This is historical analysis, not live monitoring or employee scoring.</p><strong>Jim, please upload:</strong><ul>'+required.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul><p>Each service Excel file must include both comparison weeks. Missing dates are never counted as zero.</p><button type="button" class="btn primary" data-action="nav" data-id="service">Upload Service sheets →</button>';
- const rows=results.map(r=>'<div class="trend-center"><span>'+esc(r.name)+'</span><strong class="'+(!r.ready?'trend-incomplete':r.change<=-5?'trend-down':r.change>=5?'trend-up':'trend-steady')+'">'+(r.ready?(r.change>=0?'+':'')+r.change.toFixed(1)+' pp':'Missing history')+'</strong></div>').join('');
+ const rows=results.map(r=>{
+   if(!r.ready)return '<div class="trend-center"><span>'+esc(r.name)+'</span><strong class="trend-incomplete">Missing history</strong></div>';
+   const difference=(r.change>=0?'+':'')+r.change.toFixed(1)+' pp';
+   const direction=r.change<0?'decreased':r.change>0?'increased':'stayed about the same';
+   const description=r.change<0
+     ?'A negative number means a smaller share of recorded On Call + Available time was spent On Call in the newer period.'
+     :r.change>0
+       ?'A positive number means a larger share of recorded On Call + Available time was spent On Call in the newer period.'
+       :'The percentage-point change rounds to zero for these periods.';
+   const tooltipId='trend-pp-'+r.name.toLowerCase();
+   const spoken=r.name+' On Call share '+direction+' by '+Math.abs(r.change).toFixed(1)+' percentage points, from '+r.previousShare.toFixed(1)+' percent to '+r.currentShare.toFixed(1)+' percent over '+r.paired+' matched days.';
+   return '<div class="trend-center"><span>'+esc(r.name)+'</span><div class="trend-pp-wrap"><strong class="trend-pp '+(r.change<=-5?'trend-down':r.change>=5?'trend-up':'trend-steady')+'" tabindex="0" aria-label="'+esc(spoken)+'" aria-describedby="'+tooltipId+'">'+esc(difference)+'<span class="trend-pp-help-icon" aria-hidden="true">?</span></strong><div class="trend-pp-tooltip" role="tooltip" id="'+tooltipId+'"><strong>What does '+esc(difference)+' mean?</strong><p><b>pp</b> means <b>percentage points</b>, not percent change.</p><div class="trend-pp-comparison"><span>Earlier week <b>'+r.previousShare.toFixed(1)+'%</b></span><span>Newer week <b>'+r.currentShare.toFixed(1)+'%</b></span></div><p><b>On Call share '+direction+' by '+Math.abs(r.change).toFixed(1)+' percentage points.</b></p><p>'+esc(description)+'</p><small>Calculated from '+r.paired+' matching dates in each week of imported Tableau reports. This alone does not establish whether performance improved or declined.</small></div></div></div>';
+ }).join('');
  const alerts=results.flatMap(r=>r.notices.map(note=>'<div class="trend-alert"><strong>'+esc(r.name)+'</strong><span>'+esc(note)+'</span></div>')).slice(0,8).join('');
  return '<section class="panel workforce-trends" aria-label="Workforce Trend Alerts"><div class="trend-head"><div><div class="trend-label">HISTORICAL TABLEAU REPORTS · NOT LIVE</div><div class="trend-title"><h2>Workforce Trend Alerts</h2><div class="trend-help"><button type="button" class="trend-help-icon" aria-label="What does this feature do, and which Excel reports should Jim upload?" aria-describedby="trend-explainer">?</button><div class="trend-help-content" id="trend-explainer" role="tooltip">'+tooltip+'</div></div></div><p>Hover over ? for an explanation and the Excel files required.</p></div><button class="btn primary" data-action="nav" data-id="service">Upload Service sheets →</button></div>'+
  '<div class="trend-asof">'+(last?'Last recorded: '+esc(last)+' · '+day(last,-13)+'–'+day(last,-7)+' versus '+day(last,-6)+'–'+last:'No service report has been imported in this browser yet.')+'</div>'+
