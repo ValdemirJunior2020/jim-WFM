@@ -104,3 +104,126 @@
 .shell.open .sidebar-scrim{display:block}
 .sidebar.is-collapsed .sidebar-brand-row .brand-name{font-size:16px}
 }
+
+
+/* FLUXFLOW-inspired sidebar — adapted to Jim WFM's real navigation and permissions.
+   The menu starts EXPANDED; the collapse control remains optional. */
+:root{--sidebar-graphite:#181a24;--sidebar-graphite-deep:#11141f}
+.sidebar{
+ background:linear-gradient(175deg,#191b27 0%,#171a24 46%,#111621 100%);
+ border-right:1px solid rgba(179,175,220,.13);
+ box-shadow:12px 0 42px rgba(0,0,0,.18);
+}
+.sidebar-brand-row{
+ border-bottom:1px solid rgba(185,182,227,.12);
+ margin-bottom:17px;
+ padding:25px 1px 20px;
+}
+.sidebar-brand-row .brand-icon{
+ width:42px;height:42px;position:relative;overflow:visible;
+ border-radius:12px;background:transparent;
+ box-shadow:none;border:none;
+ display:grid;place-items:center;
+}
+.brand-mark{position:relative;display:block;width:34px;height:33px;filter:drop-shadow(0 0 10px rgba(113,91,239,.32))}
+.brand-mark i{display:block;position:absolute;width:24px;height:10px;border-radius:3px 7px 3px 7px;transform:skew(-22deg)}
+.brand-mark i:nth-child(1){top:4px;left:4px;background:linear-gradient(90deg,#1ddafa,#a65cff);box-shadow:0 1px 12px #945cff66}
+.brand-mark i:nth-child(2){top:13px;left:8px;width:21px;background:linear-gradient(90deg,#aa60fb,#f657ba)}
+.brand-mark i:nth-child(3){top:22px;left:5px;width:14px;background:linear-gradient(90deg,#159bfc,#a551e8)}
+.sidebar-brand-row .brand-name{font-size:16px;color:#f6f4ff;letter-spacing:-.35px;font-weight:850}
+.sidebar-brand-row .brand-sub{color:#838698;letter-spacing:1.2px;font-size:9px}
+.sidebar-toggle{
+ background:#232734;border:1px solid #3a3e52;color:#9ba4c3;
+ box-shadow:inset 0 1px 0 #ffffff09;
+}
+.sidebar-toggle:hover{background:#303449;color:#d8e5ff;border-color:#6769a2}
+.sidebar-scroll{padding:0 0 14px;scrollbar-color:#47475e transparent}
+.sidebar-nav-group{padding:0 0 13px;margin:0 0 10px;border-bottom:1px solid rgba(195,190,229,.11)}
+.sidebar-nav-group:last-child{border-bottom:none}
+.sidebar-nav-group .side-heading{
+ color:#808497;letter-spacing:1.3px;font-size:10px;
+ padding:11px 13px 11px;font-weight:800;
+}
+.sidebar-nav-group .nav{gap:6px}
+.sidebar-nav-group .nav-item{
+ --nav-color:#51c7ef;
+ min-height:45px;padding:12px 13px;
+ border-radius:8px;
+ background:transparent;border:1px solid transparent;
+ font-size:12.4px;color:#aeb4c8;
+ box-shadow:none;transition:background .16s ease,color .16s ease,transform .16s ease,box-shadow .16s ease;
+}
+.sidebar-nav-group .nav-item .sidebar-icon{color:var(--nav-color);filter:drop-shadow(0 0 4px color-mix(in srgb,var(--nav-color) 16%, transparent))}
+.sidebar-nav-group .nav-item:hover{
+ background:linear-gradient(95deg,rgba(58,60,83,.48),rgba(35,39,58,.55));
+ border-color:rgba(142,132,191,.16);color:#fff;
+ transform:translateX(1px);
+}
+.sidebar-nav-group .nav-item:not(.active)::before{
+ content:'';position:absolute;left:-14px;top:9px;bottom:9px;width:3px;border-radius:1px;
+ background:var(--nav-color);box-shadow:0 0 12px var(--nav-color);
+ opacity:.72;transition:opacity .16s;
+}
+.sidebar-nav-group .nav-item:hover::before{opacity:1}
+.sidebar-nav-group .nav-item.active{
+ background:linear-gradient(100deg,#12c9ee 0%,#477cf5 45%,#8d36ec 100%);
+ border-color:rgba(193,174,255,.35);
+ color:#fff;box-shadow:0 4px 19px rgba(91,67,248,.33),0 0 13px rgba(24,211,248,.14);
+ transform:none;
+}
+.sidebar-nav-group .nav-item.active::before{
+ content:'';position:absolute;left:-14px;top:4px;bottom:4px;width:3px;border-radius:2px;
+ background:#24d7ff;box-shadow:0 0 17px #00cdff,0 0 5px #3cedff;
+}
+.sidebar-nav-group .nav-item.active::after{
+ content:'';position:absolute;right:-14px;top:4px;bottom:4px;width:3px;border-radius:2px;
+ background:#a642fa;box-shadow:0 0 17px #b34aff,0 0 5px #b34aff;
+}
+.sidebar-nav-group .nav-item.active .sidebar-icon{color:#fff;filter:drop-shadow(0 0 3px rgba(255,255,255,.25))}
+.sidebar-nav-group .nav-item[data-id="overview"]{--nav-color:#18c9f9}
+.sidebar-nav-group .nav-item[data-id="agents"]{--nav-color:#39df9a}
+.sidebar-nav-group .nav-item[data-id="schedule"]{--nav-color:#f8af61}
+.sidebar-nav-group .nav-item[data-id="analytics"]{--nav-color:#a16cff}
+.sidebar-nav-group .nav-item[data-id="service"]{--nav-color:#f269bb}
+.sidebar-nav-group .nav-item[data-id="studio"]{--nav-color:#cb69f3}
+.sidebar-nav-group .nav-item[data-id="settings"]{--nav-color:#57d2d3}
+.sidebar-nav-group .nav-item[data-id="guide"]{--nav-color:#509fff}
+.sidebar-nav-group .nav-item .nav-new{
+ background:rgba(151,77,238,.19);color:#e3c5ff;
+ border:1px solid rgba(172,112,255,.35);
+ border-radius:5px;padding:3px 5px;
+}
+.sidebar-nav-group .nav-item.active .nav-new{color:#fff;border-color:#ffffff55;background:#ffffff2c}
+.sidebar-nav-group .nav-report-dot{background:#e976d5;box-shadow:0 0 8px #e976d588}
+.sidebar-bottom{
+ padding-top:12px;border-top:1px solid rgba(191,185,227,.15);
+ background:linear-gradient(180deg,transparent,rgba(4,7,14,.10));
+}
+.sidebar-bottom .system-small{
+ background:rgba(27,31,44,.88);border:1px solid rgba(111,117,151,.23);
+ border-radius:11px;padding:12px;
+}
+.sidebar-bottom .mini-label{color:#a0a0b5;letter-spacing:1.3px}
+.sidebar-bottom .small-row{color:#afb8c9}
+.sidebar-bottom .profile{
+ border-top:1px solid rgba(187,184,222,.13);
+ padding:15px 5px 3px;
+}
+.sidebar-bottom .avatar{
+ background:linear-gradient(140deg,#384b77,#8c48c7);color:#fff;
+ border:1px solid rgba(181,148,255,.4);box-shadow:0 0 12px #8a5fca27;
+}
+.sidebar-bottom .profile b{color:#f3f1ff}
+.sidebar-bottom .profile small{color:#959ab1}
+.sidebar.is-collapsed .sidebar-nav-group .nav-item::before{left:-8px}
+.sidebar.is-collapsed .sidebar-nav-group .nav-item.active::after{right:-8px}
+@media(max-width:760px){
+ .sidebar-nav-group .nav-item:not(.active)::before,
+ .sidebar-nav-group .nav-item.active::before{left:-11px}
+ .sidebar-nav-group .nav-item.active::after{right:-11px}
+ .sidebar-scroll{scrollbar-width:thin}
+}
+@media(prefers-reduced-motion:reduce){
+ .sidebar-nav-group .nav-item{transition:none}
+ .sidebar-nav-group .nav-item:hover{transform:none}
+}
