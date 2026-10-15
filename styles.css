@@ -22,3 +22,14 @@
 .guide-caution{display:flex;gap:14px;align-items:flex-start;margin:22px 0;padding:17px 21px;border:1px solid #996b39;border-radius:13px;background:#3b2b1c70;color:#ffe6c2}.guide-caution p{font-size:12px;line-height:1.65;margin:7px 0 0;color:#e3c6a4}
 @media(max-width:1150px){.guide-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.guide-toplink{padding:8px;font-size:11px}.guide-intro{padding:20px;flex-direction:column;align-items:stretch}.guide-intro-side{align-items:flex-start}.guide-grid,.guide-two{grid-template-columns:1fr}.guide-card{min-height:0}.guide-intro h2{font-size:22px}}
+
+
+/* Browser-local service history upload */
+.service-import-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:18px 0}
+.service-import-actions input[type="file"]{flex:1 1 270px;max-width:100%;padding:11px;border:1px solid var(--line,#25485a);border-radius:10px;background:#0b2435;color:var(--ink,#e8f8ff);font-size:12px}
+.service-import-actions input[type="file"]::file-selector-button{border:0;border-radius:7px;padding:8px 10px;margin-right:10px;background:#184960;color:#e8f8ff;font-weight:700;cursor:pointer}
+.service-import-actions .btn{white-space:nowrap}
+.service-source-list{margin-top:14px;font-size:12px;color:#bbd3df;display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+.service-stats{margin-top:18px}
+.service-stats .stat-number{font-variant-numeric:tabular-nums}
+@media(max-width:780px){.service-import-actions{align-items:stretch;flex-direction:column}.service-import-actions .btn,.service-import-actions input[type="file"]{width:100%}}
