@@ -10,3 +10,6 @@ server/audit-log.jsonl
 server/requests/
 
 dist/
+
+# Real roster, encrypted backups and audit logs must remain off GitHub.
+server/private/
