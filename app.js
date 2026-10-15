@@ -376,7 +376,6 @@ if(action==='toggle-sidebar'){sidebarCollapsed=!sidebarCollapsed;try{localStorag
 if(action==='close-menu'){menuOpen=false;render();return}
 if(action==='notifications'){notify('No live notifications: this is a demo with sample records');return}
 if(action==='local-choose'){window.JimLocalData.chooseFolder(false);return}
-if(action==='local-change-folder'){window.JimLocalData.chooseFolder(true);return}
 if(action==='local-save'){window.JimLocalData.saveNow();return}
 if(action==='local-restore'){window.JimLocalData.restoreLatest();return}
 if(action==='local-download'){window.JimLocalData.exportBackup();return}
