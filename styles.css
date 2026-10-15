@@ -227,3 +227,41 @@
  .sidebar-nav-group .nav-item{transition:none}
  .sidebar-nav-group .nav-item:hover{transform:none}
 }
+
+
+/* Workforce Trend Alerts — historical analytics, tooltip and upload prompt */
+.workforce-trends{position:relative;overflow:visible;margin:19px 0 22px;background:linear-gradient(145deg,#122739,#111e35 70%,#17213a);border:1px solid #35516c}
+.trend-head{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+.trend-head>div:first-child{min-width:0;flex:1}
+.trend-label{font-size:10px;letter-spacing:1.35px;font-weight:850;color:#8fd5ed;margin-bottom:9px}
+.trend-title{display:flex;align-items:center;gap:10px}
+.trend-title h2{font:800 18px Manrope,Arial,sans-serif;color:#f1faff;margin:0}
+.trend-head p{color:#90a9bc;font-size:11px;margin:6px 0 0;line-height:1.55}
+.trend-help{position:relative;display:inline-flex;align-items:center;z-index:4}
+.trend-help-icon{display:grid;place-items:center;width:23px;height:23px;border-radius:50%;border:1px solid #57baca;color:#a1f3ff;background:#153b53;font-size:14px;font-weight:900;cursor:help;box-shadow:0 0 10px #36c7f02d}
+.trend-help-icon:hover,.trend-help-icon:focus-visible{background:#2c5874;color:white;border-color:#b4eafe}
+.trend-help-content{position:absolute;left:0;top:calc(100% + 12px);width:min(365px,80vw);padding:17px 18px;background:#182234;color:#d7e8f8;border:1px solid #6875b7;border-radius:12px;box-shadow:0 17px 55px #000a,0 0 20px #6a50fa25;font-size:12px;line-height:1.56;z-index:50;visibility:hidden;opacity:0;pointer-events:none;transform:translateY(-5px);transition:opacity .13s,transform .13s}
+.trend-help:hover .trend-help-content,.trend-help:focus-within .trend-help-content{visibility:visible;opacity:1;pointer-events:auto;transform:translateY(0)}
+.trend-help-content strong{color:#f5f4ff;font-size:12px}
+.trend-help-content p{font-size:11px;color:#c1c9de;line-height:1.6;margin:8px 0 11px}
+.trend-help-content ul{padding-left:19px;margin:7px 0 11px;color:#e0e1fb}
+.trend-help-content li{padding:2px 0}
+.trend-help-content .btn{margin-top:4px;font-size:11px}
+.trend-asof{font-size:11px;color:#a5bbcb;margin-top:17px;padding-top:12px;border-top:1px solid #35516a;line-height:1.6}
+.trend-missing{color:#f2bc7a;font-size:11px;margin:13px 0;line-height:1.6}
+.trend-centers{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:17px}
+.trend-center{display:flex;flex-direction:column;gap:6px;min-width:0;padding:12px;border-radius:10px;border:1px solid #2e4860;background:#0a22358c}
+.trend-center span{font-size:11px;color:#adc1d2;font-weight:750}
+.trend-center strong{font-size:17px;font-variant-numeric:tabular-nums;color:#dce9f6}
+.trend-center .trend-down{color:#ffd08d}
+.trend-center .trend-up{color:#82e9bf}
+.trend-center .trend-incomplete{font-size:11px;color:#f2c483}
+.trend-center .trend-steady{color:#c0d7ea}
+.trend-alerts{display:grid;gap:7px;margin-top:13px}
+.trend-alert{display:flex;align-items:flex-start;gap:10px;padding:11px 13px;border:1px solid #4b4968;border-radius:9px;background:#352d4844;font-size:11px;line-height:1.55;color:#dfdce8}
+.trend-alert strong{min-width:80px;color:#d9c0ff}
+.trend-empty{color:#b3c4d1;font-size:12px;margin:13px 0}
+.trend-foot{font-size:10px;color:#7f9cb5;margin-top:16px;padding-top:11px;border-top:1px solid #30475b;line-height:1.6}
+@media(max-width:980px){.trend-centers{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.trend-centers{grid-template-columns:1fr 1fr}.trend-head>.btn{width:100%}.trend-help-content{left:auto;right:-4px;width:min(310px,79vw)}.trend-alert{flex-direction:column;gap:4px}.trend-alert strong{min-width:0}}
+@media(prefers-reduced-motion:reduce){.trend-help-content{transition:none;transform:none}}
