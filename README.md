@@ -11,7 +11,7 @@ A polished **zero-license-cost**, **API-key-free** workforce-management demonstr
 3. In **AI Studio**, try **“Change the colors to electric blue”**. Review and approve the request to change the demo theme.
 4. Update an example agent in the directory. The aggregate metrics refresh. Export a CSV of the synthetic results.
 
-The standalone UI uses plain HTML, modern CSS, and browser JavaScript so it can be deployed as a static site with **no package installation** and no external API keys. React can be introduced after the demo when production requirements are agreed. Google Fonts is a purely optional cosmetic download; system-font fallbacks work offline.
+The standalone UI uses plain HTML, modern CSS, and browser JavaScript so it can be deployed as a static site with **no package installation** and no external API keys. React can be introduced after the demo when production requirements are agreed. The frontend does not load third-party fonts, trackers, or API scripts.
 
 ## Architecture
 
