@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const read=(p)=>readFile(resolve(root,p),'utf8');
 test('HTML includes accessible app root and local scripts',async()=>{
- const html=await read('index.html');assert.match(html,/<div id="app"><\/div>/);assert.match(html,/src="\/app\.js"/);assert.match(html,/href="\/styles\.css"/);
+ const html=await read('index.html');assert.match(html,/<div id="app"><\/div>/);assert.match(html,/src="\.\/app\.js"/);assert.match(html,/href="\.\/styles\.css"/);
 });
 test('all required call centers are present in app demo',async()=>{
  const js=await read('app.js');for(const name of ['Buwelo','Concentrix','WNS','Telus'])assert.ok(js.includes(name));assert.match(js,/DEMO DATA/);assert.match(js,/Super Admin AI Studio/);
