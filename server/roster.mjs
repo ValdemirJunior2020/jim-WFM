@@ -5,6 +5,7 @@ import {readFile,writeFile,rename,mkdir,copyFile,appendFile} from 'node:fs/promi
 import {randomBytes,scryptSync,createCipheriv,createDecipheriv,randomUUID,createHash} from 'node:crypto';
 import {dirname,resolve,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {vaultSummary,vaultSet,vaultRead,vaultDelete,vaultPrune,vaultConfigured} from './password-vault.mjs';
 const home=dirname(fileURLToPath(import.meta.url));
 const privateDir=resolve(home,'private');
 const storage=join(privateDir,'roster.enc');
@@ -32,17 +33,24 @@ async function log(action,details={}){await mkdir(privateDir,{recursive:true,mod
 function result(res,origin,status,body){const h={'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','vary':'Origin'};const origins=(process.env.CORS_ORIGINS||'').split(',').map(s=>s.trim());if(origins.includes(origin)){h['access-control-allow-origin']=origin;h['access-control-allow-headers']='Authorization,Content-Type'}res.writeHead(status,h);res.end(JSON.stringify(body))}
 async function body(req){const chunks=[];let size=0;for await(const c of req){size+=c.length;if(size>2000000)throw Error('Upload too large');chunks.push(c)}try{return JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{throw Error('Valid JSON required')}}
 export async function handleRoster(req,res,origin){const url=new URL(req.url,'http://localhost');const action=url.pathname;try{
- if(req.method==='GET'&&action==='/api/roster'){const records=await load();return result(res,origin,200,{records,updatedAt:new Date().toISOString(),mode:'PRIVATE_ROSTER_NOT_LIVE_STATUS'})}
+ if(req.method==='GET'&&action==='/api/roster'){const records=await load(),passwordIds=await vaultSummary();return result(res,origin,200,{records:records.map(({password,...row})=>({...row,hasPassword:passwordIds.has(row.id)})),vaultConfigured:vaultConfigured(),updatedAt:new Date().toISOString(),mode:'PRIVATE_ROSTER_NOT_LIVE_STATUS'})}
  if(req.method==='GET'&&action==='/api/roster/audit'){let text='';try{text=await readFile(join(privateDir,'audit.jsonl'),'utf8')}catch(e){if(e.code!=='ENOENT')throw e}return result(res,origin,200,{events:text.trim().split('\n').filter(Boolean).slice(-200).map(x=>JSON.parse(x))})}
  if(req.method!=='POST')return result(res,origin,405,{error:'Method not allowed'});
  const input=await body(req),records=await load();
+ if(['/api/roster/password/set','/api/roster/password/reveal','/api/roster/password/delete'].includes(action)){
+  if(!records.some(x=>x.id===input.id))throw Error('Agent does not exist');
+  if(action.endsWith('/set')){if(input.confirm!=='SET_PASSWORD')throw Error('SET_PASSWORD confirmation required');await vaultSet(input.id,input.password,input.vaultKey);await log('password_set',{id:input.id});return result(res,origin,200,{ok:true});}
+  if(action.endsWith('/reveal')){if(input.confirm!=='REVEAL_PASSWORD')throw Error('REVEAL_PASSWORD confirmation required');const password=await vaultRead(input.id,input.vaultKey);await log('password_revealed',{id:input.id});return result(res,origin,200,{password});}
+  if(input.confirm!=='DELETE_PASSWORD')throw Error('DELETE_PASSWORD confirmation required');await vaultDelete(input.id,input.vaultKey);await log('password_deleted',{id:input.id});return result(res,origin,200,{ok:true});
+ }
+
  if(action==='/api/roster/import'){
    if(input.confirm!=='IMPORT'||!Array.isArray(input.records)||input.records.length>20000)throw Error('Confirm IMPORT and supply up to 20,000 sanitized records');
    if(input.mode==='replace'&&input.replaceConfirm!=='REPLACE_ROSTER')throw Error('Separate REPLACE_ROSTER approval required');
    const cleaned=input.records.map(clean),originalCount=records.length;
    const byKey=new Map((input.mode==='replace'?[]:records).map(x=>[x.center+'|'+x.email.toLowerCase(),x]));
    for(const row of cleaned)byKey.set(row.center+'|'+row.email.toLowerCase(),row);
-   const next=[...byKey.values()];await save(next);await log('import',{submitted:cleaned.length,before:originalCount,after:next.length,mode:input.mode==='replace'?'replace':'merge'});
+   const next=[...byKey.values()];await save(next);if(input.mode==='replace')await vaultPrune(next.map(x=>x.id));await log('import',{submitted:cleaned.length,before:originalCount,after:next.length,mode:input.mode==='replace'?'replace':'merge'});
    return result(res,origin,200,{ok:true,submitted:cleaned.length,before:originalCount,after:next.length});
  }
  if(action==='/api/roster/save'){
@@ -53,7 +61,7 @@ export async function handleRoster(req,res,origin){const url=new URL(req.url,'ht
  if(action==='/api/roster/archive'||action==='/api/roster/restore'||action==='/api/roster/delete'){
    if(typeof input.id!=='string')throw Error('Record ID required');const i=records.findIndex(x=>x.id===input.id);if(i<0)throw Error('Record not found');
    const needed=action.endsWith('/archive')?'ARCHIVE':action.endsWith('/restore')?'RESTORE':'PERMANENTLY_DELETE';if(input.confirm!==needed)throw Error('Confirmation '+needed+' required');
-   if(needed==='PERMANENTLY_DELETE')records.splice(i,1);else records[i].archived=needed==='ARCHIVE';await save(records);await log(needed.toLowerCase(),{id:input.id});return result(res,origin,200,{ok:true});
+   if(needed==='PERMANENTLY_DELETE')records.splice(i,1);else records[i].archived=needed==='ARCHIVE';await save(records);if(needed==='PERMANENTLY_DELETE')await vaultPrune(records.map(x=>x.id));await log(needed.toLowerCase(),{id:input.id});return result(res,origin,200,{ok:true});
  }
  return result(res,origin,404,{error:'No such endpoint'});
 }catch(e){return result(res,origin,400,{error:String(e.message).slice(0,250)})}}
