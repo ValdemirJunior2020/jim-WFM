@@ -1,9 +1,9 @@
 /* Jim WFM local data manager — offline, browser-side only. No credentials/roster vault data. */
 (() => {
 'use strict';
-const DB='jimwfm-local-handle-v1',HANDLE_KEY='chosen-directory',AUTO_KEY='jimwfm-local-autosave-v1',STORAGE_KEY='jimwfm-local-activity-v1';
+const DB='jimwfm-local-handle-v1',HANDLE_KEY='chosen-directory',AUTO_KEY='jimwfm-local-autosave-v1',STORAGE_KEY='jimwfm-local-activity-v1',LAST_SAVE_KEY='jimwfm-local-last-saved-v1';
 const DIRS=['Uploads','Historical-Data','Dashboard-Settings','Backups','Exports','Logs'];
-let root=null,linked=false,lastSaved=null,status='Folder not linked',pending=Promise.resolve(),uploadCounts=0,booted=false,remembered=false;
+let root=null,linked=false,lastSaved=localStorage.getItem(LAST_SAVE_KEY)||null,status='Folder not linked',pending=Promise.resolve(),uploadCounts=0,booted=false,remembered=false;
 let enabled=localStorage.getItem(AUTO_KEY)!=='false',waiting=false;
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
 const stamp=()=>new Date().toISOString().replace(/[:.]/g,'-');
@@ -57,7 +57,8 @@ async function doSave(action='Manual save'){
  const manifest={version:1,savedAt:snap.savedAt,lastAction:action,folder:root.name,files:['Backups/jim-wfm-latest.json','Dashboard-Settings/dashboard-state.json','Historical-Data/service-history.json','Logs/recent-actions.json'],note:'Browser snapshots only. Private roster/password vaults and admin secrets are excluded.'};
  await write('Logs','manifest.json',JSON.stringify(manifest,null,2));
  lastSaved=snap.savedAt;
- notice('Saved on Jim’s computer','success');
+ try{localStorage.setItem(LAST_SAVE_KEY,lastSaved)}catch{}
+ notice(remembered?'Saved on Jim’s computer':'Saved this time, but the browser could not remember the folder. Allow site storage to keep this location. ',remembered?'success':'warning');
  return manifest;
 }
 function enqueue(task){
