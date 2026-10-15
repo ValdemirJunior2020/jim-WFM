@@ -11,7 +11,7 @@ A separate local-only administrator portal is included in the Node.js bridge:
 - Select the **password-free private roster JSON** supplied separately; click **Import / Merge** to load.
 - Jim can add, edit, archive, restore, and permanently delete agent records. The portal requires explicit confirmations; every write creates an encrypted backup plus a PII-minimized audit entry.
 
-**Do not commit `server/.env.local` or `server/private/`.** Both are in `.gitignore`. The roster is encrypted at rest with AES-256-GCM using a key derived from the admin token. Preserve the token securely: changing or losing it will make saved roster data unreadable. Backups are stored locally. This is local token security, **not** production SSO/multi-user role-based access; do not expose the port publicly.
+**Do not commit `server/.env.local` or `server/private/`.** Both are in `.gitignore`. The roster is encrypted at rest with AES-256-GCM using a key derived from the admin token; passwords are encrypted independently using the vault key. Preserve both keys securely: changing or losing it will make saved roster data unreadable. Backups are stored locally. This is local token security, **not** production SSO/multi-user role-based access; do not expose the port publicly.
 
 ## Source mapping
 - **Buwelo**: `Active Agents - COL`, `Active Agents - GH`, `Active Agents - PH`. Deduplicate by center + work email. Historical `Agents Removed` is not current staff.
@@ -19,7 +19,7 @@ A separate local-only administrator portal is included in the Node.js bridge:
 - **Telus**: `Active Agents` from one version; the two supplied workbooks contain the same active staff identities. Do not import twice. `Agents Removed` is separate.
 - **WNS**: no roster supplied yet.
 
-**Never import any password, PW, credential, or secret columns.** The local importer rejects keys that look like credentials. The private import file contains only staff information necessary for roster management.
+**Private passwords:** The roster importer still rejects password/PW/credential columns to prevent accidental display or import into the general directory. Jim can set, reveal or remove an individual agent password through the local **Password** action using a separate `ROSTER_VAULT_KEY`. Passwords are encrypted under `server/private/password-vault.enc`; the roster API returns only `hasPassword`. The earlier sanitized import JSON does not contain original passwords.
 
 ## Booking lookup source
 `https://www.hotelplanner.com/_Admin/Postings/FIT.htm?fit_id={FIT_ID}&SkipStats=1` represents one FIT booking detail page, **not** a real-time workforce API. It may require an authenticated HotelPlanner session. No credentials are stored or automated requests made. A real booking integration needs an authorized read-only endpoint, access specification, and server-side authentication.
