@@ -135,24 +135,33 @@ function merge(next,parsed,filename){
 }
 async function importFiles(files){
   if(!files.length)throw Error('Choose one or more Excel files');
-  if(files.length>12)throw Error('Upload up to 12 reports at a time');
-  const next=structuredClone(store),report=[];
+  if(files.length>30)throw Error('Select up to 30 reports at a time');
+  const next=structuredClone(store),report=[],skipped=[];
   for(const file of files){
-    const filename=file.name.toLowerCase();
-    if(filename.endsWith('.xlsx')){
-      const rows=await workbookRows(file),isCalls=rows[1]?.[0]==='Day of Created-At';
-      const parsed=isCalls?parseCalls(rows,file.name):parseUtilization(rows,file.name);
-      report.push(file.name+': '+merge(next,parsed,file.name)+' dates imported');
-    }else if(filename.endsWith('.json')){
-      if(file.size>2*1024*1024)throw Error('Snapshot exceeds 2 MB');
-      const snapshot=JSON.parse(await file.text());
-      if(snapshot.version!==1||!snapshot.centers||!snapshot.calls)throw Error('Invalid private snapshot');
-      for(const c of CENTERS)if(snapshot.centers[c])merge(next,{type:'utilization',center:c,days:snapshot.centers[c]},file.name);
-      if(Object.keys(snapshot.calls).length)merge(next,{type:'calls',days:snapshot.calls},file.name);
-      report.push(file.name+': private snapshot loaded');
-    }else throw Error('Only .xlsx and private .json snapshots are supported');
+    try{
+      const filename=file.name.toLowerCase();
+      if(filename.endsWith('.xlsx')){
+        const rows=await workbookRows(file);
+        const header=(rows[1]||[]).map(v=>String(v??'').trim().toLowerCase());
+        const isCalls=header[0]==='day of created-at'&&header.filter(x=>x==='answered calls').length>=2;
+        const isService=header.includes('grand total')&&rows.slice(2,35).some(row=>['available','on call','break','offline'].includes(String(row[2]||'').trim().toLowerCase()));
+        if(!isCalls&&!isService)throw Error('Not a supported service-status or TELUS call-activity export');
+        const parsed=isCalls?parseCalls(rows,file.name):parseUtilization(rows,file.name);
+        report.push(file.name+': '+merge(next,parsed,file.name)+' dates imported');
+      }else if(filename.endsWith('.json')){
+        if(file.size>2*1024*1024)throw Error('Snapshot exceeds 2 MB');
+        const snapshot=JSON.parse(await file.text());
+        if(snapshot.version!==1||!snapshot.centers||!snapshot.calls)throw Error('Invalid private snapshot');
+        for(const c of CENTERS)if(snapshot.centers[c])merge(next,{type:'utilization',center:c,days:snapshot.centers[c]},file.name);
+        if(Object.keys(snapshot.calls).length)merge(next,{type:'calls',days:snapshot.calls},file.name);
+        report.push(file.name+': private snapshot loaded');
+      }else throw Error('Only .xlsx reports or a private .json snapshot are supported');
+    }catch(err){
+      skipped.push(file.name+': '+String(err.message||err).slice(0,180));
+    }
   }
-  store=next;persist();return report;
+  if(report.length){store=next;persist()}
+  return {imported:report,skipped};
 }
 function recent(o){const p=period();return Object.fromEntries(Object.entries(o||{}).filter(([d])=>d>=p.start&&d<=p.end))}
 function summary(filter){
@@ -358,7 +367,7 @@ if(action==='toggle-sidebar'){sidebarCollapsed=!sidebarCollapsed;try{localStorag
 if(action==='close-menu'){menuOpen=false;render();return}
 if(action==='notifications'){notify('No live notifications: this is a demo with sample records');return}
 if(action==='download-report'){downloadReport();notify('Demo report downloaded');return}
-if(action==='import-service'){const files=Array.from($('service-files')?.files||[]);if(!files.length)return notify('Select one or more .xlsx or .json files');const el=b;el.disabled=true;el.textContent='Reading files...';window.ServiceHistory.importFiles(files).then(lines=>{render();notify('Imported '+lines.length+' service report(s)')}).catch(e=>{el.disabled=false;el.textContent='Import selected files';notify('Import error: '+e.message);window.alert('Could not import service report: '+e.message)});return}
+if(action==='import-service'){const files=Array.from($('service-files')?.files||[]);if(!files.length)return notify('Select one or more .xlsx or .json files');const el=b;el.disabled=true;el.textContent='Reading files...';window.ServiceHistory.importFiles(files).then(result=>{render();notify('Imported '+result.imported.length+' report(s) · skipped '+result.skipped.length);window.alert('Service file results:\n\n'+(result.imported.length?'Imported:\n'+result.imported.join('\n'):'No supported files imported.')+(result.skipped.length?'\n\nSkipped (not imported):\n'+result.skipped.join('\n'):'')+'\n\nHistorical data was updated only for successfully imported files.')}).catch(e=>{el.disabled=false;el.textContent='Import selected files';notify('Import error: '+e.message);window.alert('Could not import service report: '+e.message)});return}
 if(action==='export-service'){window.ServiceHistory.backup();notify('Private history backup downloaded');return}
 if(action==='export-service-csv'){window.ServiceHistory.exportCSV(center);notify('30-day CSV downloaded');return}
 if(action==='clear-service'){if(!window.confirm('Clear imported historical service data from this browser only? Export a backup first.'))return;window.ServiceHistory.clear();render();notify('Private historical data cleared');return}
