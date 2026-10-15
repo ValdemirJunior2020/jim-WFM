@@ -391,3 +391,35 @@
 .local-saved-row .btn{white-space:nowrap;font-size:11px;padding:6px 10px}
 .local-manager-card .local-manager-badge.linked{border-color:#46d899;box-shadow:0 0 14px rgba(90,241,147,.21)}
 @media(max-width:580px){.local-saved-row{flex-direction:column;align-items:flex-start}.local-manager-external{padding:12px}}
+
+
+/* Workforce Trend Alerts: explain "pp" on hovering or focusing each historical figure. */
+.workforce-trends{overflow:visible}
+.trend-center{position:relative}
+.trend-pp-wrap{position:relative;display:inline-flex;align-self:flex-start;max-width:100%;z-index:2}
+.trend-pp-wrap:hover,.trend-pp-wrap:focus-within{z-index:30}
+.trend-center .trend-pp{display:inline-flex;align-items:center;gap:7px;cursor:help;border-bottom:1px dashed rgba(182,232,254,.65);text-decoration:none;white-space:nowrap;outline-offset:5px}
+.trend-center .trend-pp:focus-visible{outline:2px solid #8aeacd;border-radius:4px}
+.trend-pp-help-icon{font:800 10px/1 Manrope,Arial,sans-serif;display:inline-grid;place-items:center;color:#c0fbe4;border:1px solid #639c9b;background:#1b464a;border-radius:50%;width:17px;height:17px}
+.trend-pp-tooltip{
+ position:absolute;left:0;top:calc(100% + 10px);z-index:40;
+ width:min(325px,79vw);max-width:325px;
+ background:#142738;color:#dce9f5;border:1px solid #6599a9;
+ border-radius:12px;padding:14px 15px;
+ box-shadow:0 16px 40px rgba(0,0,0,.65),0 0 18px rgba(67,215,163,.14);
+ opacity:0;visibility:hidden;pointer-events:none;
+ transform:translateY(-4px);transition:opacity .16s,transform .16s;
+ font-size:12px;font-weight:400;line-height:1.55;white-space:normal;
+}
+.trend-center .trend-pp-tooltip strong{display:block;font-size:13px;color:#f1fbff;margin:0 0 7px}
+.trend-pp-tooltip p{margin:7px 0;color:#d4e5ec}
+.trend-pp-tooltip p b{color:#a6f6d0}
+.trend-pp-tooltip small{display:block;margin-top:9px;font-size:11px;color:#aac6d2;line-height:1.5}
+.trend-pp-comparison{display:grid;gap:6px;margin:9px 0;padding:9px 10px;background:#0c2031;border:1px solid #2c4e62;border-radius:8px}
+.trend-pp-comparison span{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#bfdaeb;font-size:11px}
+.trend-pp-comparison b{color:#aaf2d8;font-size:13px}
+.trend-pp-wrap:hover .trend-pp-tooltip,.trend-pp-wrap:focus-within .trend-pp-tooltip{opacity:1;visibility:visible;pointer-events:auto;transform:translateY(0)}
+@media(min-width:981px){.trend-center:nth-child(4n+3) .trend-pp-tooltip,.trend-center:nth-child(4n) .trend-pp-tooltip{left:auto;right:0}}
+@media(min-width:561px) and (max-width:980px){.trend-center:nth-child(2n) .trend-pp-tooltip{left:auto;right:0}}
+@media(max-width:560px){.trend-pp-tooltip{left:0;right:auto;width:min(270px,77vw)}.trend-center:nth-child(2n) .trend-pp-tooltip{left:auto;right:0}}
+@media(prefers-reduced-motion:reduce){.trend-pp-tooltip{transition:none;transform:none}}
