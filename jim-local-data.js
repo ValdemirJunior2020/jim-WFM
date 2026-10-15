@@ -1,211 +1,297 @@
-/* Jim WFM local data manager — offline, browser-side only. No credentials/roster vault data. */
+/* Jim WFM Local Data Manager — automatic private browser filesystem, with optional Windows-folder mirror.
+   Files remain on Jim's device. A website cannot silently create a directory in Windows Downloads. */
 (() => {
 'use strict';
-const DB='jimwfm-local-handle-v1',HANDLE_KEY='chosen-directory',AUTO_KEY='jimwfm-local-autosave-v1',STORAGE_KEY='jimwfm-local-activity-v1',LAST_SAVE_KEY='jimwfm-local-last-saved-v1';
+const DB='jimwfm-local-handle-v1',HANDLE_KEY='chosen-directory';
+const AUTO_KEY='jimwfm-local-autosave-v2',STORAGE_KEY='jimwfm-local-activity-v1',LAST_SAVE_KEY='jimwfm-local-last-saved-v1';
 const DIRS=['Uploads','Historical-Data','Dashboard-Settings','Backups','Exports','Logs'];
-let root=null,linked=false,lastSaved=localStorage.getItem(LAST_SAVE_KEY)||null,status='Folder not linked',pending=Promise.resolve(),uploadCounts=0,booted=false,remembered=false;
-let enabled=localStorage.getItem(AUTO_KEY)!=='false',waiting=false;
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+const safeName=s=>String(s||'file').replace(/[/\\:*?"<>|\x00-\x1f]/g,'_').slice(0,150)||'file';
 const stamp=()=>new Date().toISOString().replace(/[:.]/g,'-');
-function notice(text,kind='info'){status=text;window.dispatchEvent(new CustomEvent('jim-local-status',{detail:{text,kind}}))}
-function canPick(){return typeof window.showDirectoryPicker==='function'}
-const safeName=s=>String(s||'file').replace(/[/\\:*?"<>|\x00-\x1f]/g,'_').slice(0,130)||'file';
-function openDB(){
+let ready=false,backend='initializing',internal=null,external=null,linked=false,remembered=false;
+let enabled=localStorage.getItem(AUTO_KEY)!=='false',lastSaved=localStorage.getItem(LAST_SAVE_KEY)||null;
+let status='Preparing automatic local storage…',pending=Promise.resolve(),booted=false,uploads=0,debounce=null,filesView=null,warning='';
+const notice=(message,kind='info')=>{status=message;window.dispatchEvent(new CustomEvent('jim-local-status',{detail:{text:message,kind}}))};
+const canPick=()=>typeof window.showDirectoryPicker==='function';
+function dbOpen(){
  return new Promise((resolve,reject)=>{
-  if(!('indexedDB' in window))return reject(Error('IndexedDB unavailable'));
-  const req=indexedDB.open(DB,1);
-  req.onupgradeneeded=()=>req.result.createObjectStore('handles');
-  req.onerror=()=>reject(req.error);
-  req.onsuccess=()=>resolve(req.result);
+  if(typeof indexedDB==='undefined')return reject(Error('Browser IndexedDB not available'));
+  const rq=indexedDB.open(DB,2);
+  rq.onupgradeneeded=()=>{const d=rq.result;if(!d.objectStoreNames.contains('handles'))d.createObjectStore('handles');if(!d.objectStoreNames.contains('files'))d.createObjectStore('files')};
+  rq.onsuccess=()=>resolve(rq.result);rq.onerror=()=>reject(rq.error||Error('Storage access blocked'));
  });
 }
-async function storeHandle(h){
+async function dbAction(table,mode,op){
+ const db=await dbOpen();
+ try{return await new Promise((resolve,reject)=>{
+   const tx=db.transaction(table,mode),req=op(tx.objectStore(table));
+   if(req){req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)}
+   else {tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)}
+ })}finally{db.close()}
+}
+const rememberFolder=async h=>{try{await dbAction('handles','readwrite',st=>st.put(h,HANDLE_KEY));remembered=true;return true}catch(e){remembered=false;console.warn('Folder selection could not be remembered',e);return false}};
+const retrieveFolder=async()=>{try{return await dbAction('handles','readonly',st=>st.get(HANDLE_KEY))}catch{return null}};
+const hasPermission=async h=>{try{return !!h&&(await h.queryPermission({mode:'readwrite'}))==='granted'}catch{return false}};
+async function initializeStorage(){
  try{
-  const db=await openDB();
-  await new Promise((resolve,reject)=>{const t=db.transaction('handles','readwrite');t.objectStore('handles').put(h,HANDLE_KEY);t.oncomplete=resolve;t.onerror=()=>reject(t.error);t.onabort=()=>reject(t.error)});
-  db.close();remembered=true;return true;
- }catch(e){remembered=false;console.warn('Cannot remember folder selection across browser restarts:',e);return false}
+  if(navigator.storage?.getDirectory){
+   const top=await navigator.storage.getDirectory();
+   internal=await top.getDirectoryHandle('Jim-WFM-Data',{create:true});
+   for(const folder of DIRS)await internal.getDirectoryHandle(folder,{create:true});
+   backend='private-filesystem';ready=true;return;
+  }
+ }catch(e){warning='Browser filesystem unavailable: '+String(e.message||e)}
+ try{
+  await dbOpen().then(db=>db.close());
+  backend='indexeddb';ready=true;
+ }catch(e){
+  backend='unavailable';ready=false;warning='Browser storage is disabled or full. Allow site data or use the Download Backup button.';
+ }
 }
-async function loadHandle(){
- try{const db=await openDB();const h=await new Promise((resolve,reject)=>{const req=db.transaction('handles','readonly').objectStore('handles').get(HANDLE_KEY);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)});db.close();return h||null}catch{return null}
-}
-async function granted(h){if(!h)return false;try{return (await h.queryPermission({mode:'readwrite'}))==='granted'}catch{return false}}
-function snapshot(){
+function readState(){
  let demo=null,service=null;
  try{demo=JSON.parse(localStorage.getItem('jimwfm-demo-v1')||'null')}catch{}
  try{service=JSON.parse(localStorage.getItem('jimwfm-service-history-v1')||'null')}catch{}
  return {version:1,app:'Jim WFM AI',savedAt:new Date().toISOString(),demo,service};
 }
-function activity(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]')}catch{return []}}
-function record(action){const items=activity();items.push({at:new Date().toISOString(),action:String(action).slice(0,200)});try{localStorage.setItem(STORAGE_KEY,JSON.stringify(items.slice(-75)))}catch{}}
-async function write(subfolder,name,contents){
- if(!root||!linked)throw Error('Choose Jim’s folder first');
- const dir=await root.getDirectoryHandle(subfolder,{create:true});
- const file=await dir.getFileHandle(safeName(name),{create:true});
- const stream=await file.createWritable();
- try{await stream.write(contents);await stream.close()}catch(e){try{await stream.abort()}catch{}throw e}
+function activities(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]')}catch{return []}}
+function record(event){
+ const x=activities();x.push({at:new Date().toISOString(),action:String(event).slice(0,180)});
+ try{localStorage.setItem(STORAGE_KEY,JSON.stringify(x.slice(-80)))}catch{}
 }
-async function doSave(action='Manual save'){
- if(!root||!linked)throw Error('Choose Jim’s folder to enable computer saves');
- if(!await granted(root)){linked=false;notice('Folder permission needed. Reconnect the folder.','warning');throw Error('Folder write permission expired')}
- const snap=snapshot(),text=JSON.stringify(snap,null,2);
- await write('Backups','jim-wfm-latest.json',text);
+async function writeInternal(folder,name,contents){
+ if(!ready)throw Error('Local data storage is not ready');
+ const fileName=safeName(name);
+ if(backend==='private-filesystem'){
+   const dir=await internal.getDirectoryHandle(folder,{create:true});
+   const handle=await dir.getFileHandle(fileName,{create:true});
+   const w=await handle.createWritable();
+   try{await w.write(contents);await w.close()}catch(e){try{await w.abort()}catch{}throw e}
+ }else{
+   const blob=contents instanceof Blob?contents:new Blob([contents]);
+   await dbAction('files','readwrite',st=>st.put(blob,folder+'/'+fileName));
+ }
+}
+async function mirror(folder,name,contents){
+ if(!linked||!external)return;
+ try{
+  if(!await hasPermission(external))throw Error('permission expired');
+  const dir=await external.getDirectoryHandle(folder,{create:true});
+  const handle=await dir.getFileHandle(safeName(name),{create:true});
+  const writer=await handle.createWritable();
+  try{await writer.write(contents);await writer.close()}catch(e){try{await writer.abort()}catch{}throw e}
+ }catch(e){
+  linked=false;warning='Windows folder needs reconnection. Automatic browser saving continues.';
+  console.warn('Windows folder mirror paused:',e);
+ }
+}
+async function write(folder,name,contents){
+ // Browser-managed copy is authoritative: no prompt, always available on supported browsers.
+ await writeInternal(folder,name,contents);
+ await mirror(folder,name,contents);
+}
+async function readInternal(folder,name){
+ if(backend==='private-filesystem'){
+   const d=await internal.getDirectoryHandle(folder);
+   const h=await d.getFileHandle(safeName(name));
+   return h.getFile();
+ }
+ return await dbAction('files','readonly',st=>st.get(folder+'/'+safeName(name)));
+}
+async function saveInternal(action='Automatic save'){
+ if(!ready)throw Error(warning||'Local storage is unavailable');
+ const snap=readState();
+ await write('Backups','jim-wfm-latest.json',JSON.stringify(snap,null,2));
  if(snap.demo)await write('Dashboard-Settings','dashboard-state.json',JSON.stringify(snap.demo,null,2));
  if(snap.service)await write('Historical-Data','service-history.json',JSON.stringify(snap.service,null,2));
- const log=activity();
- await write('Logs','recent-actions.json',JSON.stringify(log,null,2));
- const manifest={version:1,savedAt:snap.savedAt,lastAction:action,folder:root.name,files:['Backups/jim-wfm-latest.json','Dashboard-Settings/dashboard-state.json','Historical-Data/service-history.json','Logs/recent-actions.json'],note:'Browser snapshots only. Private roster/password vaults and admin secrets are excluded.'};
+ await write('Logs','recent-actions.json',JSON.stringify(activities(),null,2));
+ const manifest={version:1,savedAt:snap.savedAt,lastAction:action,storage:backend,windowsFolder:linked?external?.name:null,subfolders:DIRS,privateData:true};
  await write('Logs','manifest.json',JSON.stringify(manifest,null,2));
  lastSaved=snap.savedAt;
  try{localStorage.setItem(LAST_SAVE_KEY,lastSaved)}catch{}
- notice(remembered?'Saved on Jim’s computer':'Saved this time, but the browser could not remember the folder. Allow site storage to keep this location. ',remembered?'success':'warning');
- return manifest;
+ notice(linked?'Saved automatically in browser and Windows folder':'Saved automatically in private browser storage','success');
+ return true;
 }
-function enqueue(task){
- const job=pending.catch(()=>{}).then(task);
- pending=job.catch(e=>{notice('Save failed: '+(e.message||e),'error');console.warn('Jim WFM local save failed',e)});
- return job;
+function enqueue(job){
+ const task=pending.catch(()=>{}).then(job);
+ pending=task.catch(e=>{warning=String(e.message||e);notice('Automatic save failed: '+warning,'error');console.warn('Jim WFM save failed',e)});
+ return task;
 }
-let debounce=null;
-function changed(reason='Dashboard updated'){
- record(reason);
- if(!enabled||!linked)return;
+function changed(action='Dashboard updated'){
+ record(action);
+ if(!enabled)return;
  clearTimeout(debounce);
- debounce=setTimeout(()=>{enqueue(()=>doSave(reason)).catch(()=>{})},550);
+ debounce=setTimeout(()=>{if(ready)enqueue(()=>saveInternal(action)).catch(()=>{})},450);
 }
 async function saveNow(){
- if(!root||!linked){notice('Choose your computer folder first','warning');return false}
  clearTimeout(debounce);
- try{await enqueue(()=>doSave('Save Everything Now'));return true}catch{return false}
-}
-async function prepareFolder(h){
- root=h;
- // Create the user-authorized subfolders without altering any existing content.
- for(const name of DIRS)await h.getDirectoryHandle(name,{create:true});
- linked=true;
- const stored=await storeHandle(h);
- record('Local folder linked: '+h.name);
- notice(stored?'Saved folder: '+h.name+' — Auto Save ready':'Connected for this visit, but the browser could not remember the folder. Allow site storage for persistence.',stored?'success':'warning');
- return saveNow();
-}
-function pickerError(error){
- const name=String(error?.name||''),message=String(error?.message||error||'Unknown error');
- if(name==='AbortError')return; // User dismissed the chooser.
- let explanation='Could not open the folder chooser: '+message;
- if(name==='SecurityError'||name==='NotAllowedError'||name==='InvalidStateError')
-  explanation='The browser blocked folder access. Open https://hp-wfm.netlify.app directly in Chrome or Edge (not inside a preview/iframe), then click Choose My Folder again. Browser or company policy may restrict file access.';
- notice(explanation,'error');
- // Make blocked permissions obvious rather than looking like an inert button.
- if(typeof window.alert==='function')window.alert(explanation);
+ if(!ready)await init();
+ if(!ready){notice(warning||'Browser storage unavailable','error');return false}
+ try{return await enqueue(()=>saveInternal('Save Everything Now'))}catch{return false}
 }
 async function chooseFolder(forceNew=false){
+ if(!canPick()){
+  warning='Windows folder mirroring requires Chrome or Edge. Automatic private saving is still running.';
+  notice(warning,'warning');return false;
+ }
  try{
-  // Reuse the folder handle stored in IndexedDB from previous visits. Do NOT open a second picker.
-  if(!forceNew&&root){
-   if(linked&&await granted(root))return saveNow();
-   if(typeof root.requestPermission==='function'){
-    // Prompt from the direct user click: Chromium requires a user gesture for this request.
-    const permission=await root.requestPermission({mode:'readwrite'});
-    if(permission==='granted')return prepareFolder(root);
-    throw Object.assign(new Error('Write access was not granted for '+root.name),{name:'NotAllowedError'});
+  // For a previously selected location, ask permission from a direct click, not from page load.
+  if(!forceNew&&external){
+   if(await hasPermission(external)){linked=true;return saveNow()}
+   if(typeof external.requestPermission==='function'){
+    if(await external.requestPermission({mode:'readwrite'})==='granted')return connectExternal(external);
    }
   }
-  if(!canPick()){
-   const message='Folder picking is unavailable in this browser. Open https://hp-wfm.netlify.app directly in the latest Chrome or Edge on Windows, then click Choose My Folder. The folder stays selected in this browser profile.';
-   notice(message,'warning');
-   if(typeof window.alert==='function')window.alert(message);
-   return false;
+  // Browser deliberately refuses protected roots like Downloads. Pick a normal child folder instead.
+  // This picker MUST be invoked before any await when this is a new selection.
+  const selection=window.showDirectoryPicker({mode:'readwrite',id:'jim-wfm-mirror',startIn:'downloads'});
+  const folder=await selection;
+  if(!folder)return false;
+  if(!await hasPermission(folder)&&await folder.requestPermission?.({mode:'readwrite'})!=='granted')throw Error('Folder write access not granted');
+  return connectExternal(folder);
+ }catch(e){
+  if(e?.name!=='AbortError'){
+   warning='Windows blocked that folder (Downloads itself is protected). Automatic saving still works in Jim WFM. Choose a normal subfolder if a visible copy is needed.';
+   notice(warning,'warning');
   }
-  // IMPORTANT: call the native picker immediately inside the click handler.
-  // Do not await IndexedDB, permissions, or other work before the picker opens.
-  const pickerPromise=window.showDirectoryPicker({id:'jim-wfm-data',mode:'readwrite',startIn:'documents'});
-  const h=await pickerPromise;
-  if(!h)return false;
-  // User selecting a folder with mode=readwrite grants write permission in supported Chromium.
-  if(!await granted(h)){
-   const result=await h.requestPermission?.({mode:'readwrite'});
-   if(result!=='granted')throw Object.assign(new Error('Write permission was not granted'),{name:'NotAllowedError'});
-  }
-  return await prepareFolder(h);
- }catch(e){pickerError(e);return false}
+  return false;
+ }
+}
+async function connectExternal(folder){
+ external=folder;linked=true;
+ for(const name of DIRS)await folder.getDirectoryHandle(name,{create:true});
+ await rememberFolder(folder);
+ record('Linked optional Windows folder '+folder.name);
+ await saveNow();
+ notice('Windows folder linked: '+folder.name+'; automatic browser saving stays on','success');
+ return true;
 }
 async function archiveFiles(files){
- if(!root||!linked||!files?.length)return;
- const f=Array.from(files).filter(x=>x&&x.size<=25*1024*1024);
- if(!f.length)return;
+ if(!files?.length)return;
+ if(!ready)await init();
+ if(!ready){notice('Cannot preserve original Excel files: '+warning,'error');return}
+ const originals=Array.from(files).filter(f=>f&&f.size<=25*1024*1024);
+ if(!originals.length)return;
  return enqueue(async()=>{
-   if(!await granted(root))throw Error('Folder permission expired');
-   const prefix=stamp();
-   for(const file of f){
-    await write('Uploads',prefix+'_'+safeName(file.name),file);
-    uploadCounts++;
-   }
-   record('Archived '+f.length+' successfully imported file(s)');
-   await doSave('Service files imported');
+  const prefix=stamp();
+  for(const f of originals){
+   await write('Uploads',prefix+'_'+safeName(f.name),f);
+   uploads++;
+  }
+  record(originals.length+' original Tableau report(s) archived');
+  if(enabled)await saveInternal('Imported original Tableau workbooks');
  }).catch(()=>{});
 }
 function archiveExport(filename,body,mime){
- if(!enabled||!linked)return;
+ if(!enabled)return;
  let blob=body instanceof Blob?body:new Blob([body],{type:mime||'application/octet-stream'});
- enqueue(async()=>{await write('Exports',stamp()+'_'+safeName(filename),blob);record('Export saved: '+filename);await doSave('Export saved: '+filename)}).catch(()=>{});
+ enqueue(async()=>{
+  if(!ready)await init();
+  if(!ready)throw Error('Browser storage unavailable');
+  await write('Exports',stamp()+'_'+safeName(filename),blob);
+  record('Report exported: '+filename);
+  await saveInternal('Report exported');
+ }).catch(()=>{});
 }
+function restoreJSON(content){
+ try{
+  const backup=JSON.parse(content);
+  if(backup.version!==1||(!backup.demo&&!backup.service))throw Error('Not a Jim WFM backup');
+  if(backup.demo&&(!Array.isArray(backup.demo.agents)||!Array.isArray(backup.demo.shifts)||!backup.demo.settings))throw Error('Dashboard snapshot is invalid');
+  if(backup.service&&(!backup.service.centers||!backup.service.calls))throw Error('Service snapshot is invalid');
+  if(!window.confirm('Restore this local backup? The current dashboard and imported service history in this browser will be replaced.'))return false;
+  if(backup.demo)localStorage.setItem('jimwfm-demo-v1',JSON.stringify(backup.demo));
+  if(backup.service)localStorage.setItem('jimwfm-service-history-v1',JSON.stringify(backup.service));
+  record('Restored historical state from backup');
+  if(ready)awaitSafeSave();
+  window.location.reload();
+  return true;
+ }catch(e){notice('Restore could not complete: '+(e.message||e),'error');return false}
+}
+function awaitSafeSave(){enqueue(()=>saveInternal('Restored backup')).catch(()=>{})}
 async function restoreLatest(){
- if(!root||!linked){notice('Link your folder to restore its backup','warning');return false}
- try{
-  const dir=await root.getDirectoryHandle('Backups');
-  const h=await dir.getFileHandle('jim-wfm-latest.json');
-  const f=await h.getFile();return restoreJSON(await f.text());
- }catch(e){notice('Cannot restore: '+(e.message||e),'error');return false}
+ if(!ready)await init();
+ try{const file=await readInternal('Backups','jim-wfm-latest.json');if(!file)throw Error('No backup found');
+  return restoreJSON(await file.text());
+ }catch(e){notice('Restore failed: '+(e.message||e),'warning');return false}
 }
-function restoreJSON(body){
- try{
-  const json=JSON.parse(body);
-  if(json.version!==1||(!json.demo&&!json.service))throw Error('Invalid Jim WFM backup');
-  if(json.demo&&(!Array.isArray(json.demo.agents)||!Array.isArray(json.demo.shifts)||!json.demo.settings))throw Error('Invalid dashboard data');
-  if(json.service&&(!json.service.centers||!json.service.calls))throw Error('Invalid service data');
-  if(!window.confirm('Restore this backup? This replaces this browser’s current dashboard and service data. Consider Save Everything Now first.'))return false;
-  if(json.demo)localStorage.setItem('jimwfm-demo-v1',JSON.stringify(json.demo));
-  if(json.service)localStorage.setItem('jimwfm-service-history-v1',JSON.stringify(json.service));
-  record('Restored backup to browser');
-  if(linked)enqueue(()=>doSave('Restored backup')).catch(()=>{});
-  window.location.reload();return true;
- }catch(e){notice('Restore failed: '+(e.message||e),'error');return false}
+function downloadBlob(name,blob){
+ const url=URL.createObjectURL(blob),a=document.createElement('a');
+ a.href=url;a.download=safeName(name);document.body.appendChild(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),10000);
 }
 function exportBackup(){
- const file=new Blob([JSON.stringify(snapshot(),null,2)],{type:'application/json'});
- const url=URL.createObjectURL(file),a=document.createElement('a');
- a.href=url;a.download='jim-wfm-complete-backup.json';document.body.append(a);a.click();a.remove();
- setTimeout(()=>URL.revokeObjectURL(url),2000);
- archiveExport('jim-wfm-complete-backup.json',file,'application/json');
+ downloadBlob('Jim-WFM-Backup-'+stamp()+'.json',new Blob([JSON.stringify(readState(),null,2)],{type:'application/json'}));
+ record('Downloaded dashboard and history backup to computer');
+ notice('Backup download started. This copy is visible in your computer Downloads.','success');
+}
+async function listSaved(){
+ if(!ready)await init();
+ if(!ready)return;
+ const items=[];
+ try{
+  if(backend==='private-filesystem'){
+   for(const directory of DIRS){
+    const d=await internal.getDirectoryHandle(directory,{create:true});
+    for await(const [name,handle] of d.entries())if(handle.kind==='file')items.push(directory+'/'+name);
+   }
+  }else{
+   const keys=await dbAction('files','readonly',st=>st.getAllKeys());
+   items.push(...keys);
+  }
+  filesView=items.sort((a,b)=>a.localeCompare(b)).slice(0,120);
+  notice(filesView.length+' saved files found in Jim WFM','success');
+ }catch(e){notice('Could not list files: '+(e.message||e),'warning')}
+}
+async function downloadSaved(path){
+ const parts=String(path).split('/');
+ if(parts.length!==2||!DIRS.includes(parts[0])||parts[1]!==safeName(parts[1]))return;
+ try{
+  const file=await readInternal(parts[0],parts[1]);
+  if(!file)throw Error('File not found');
+  downloadBlob(parts[1],file instanceof Blob?file:new Blob([file]));
+  notice('Downloaded '+parts[1]+' to the computer','success');
+ }catch(e){notice('Could not download file: '+(e.message||e),'warning')}
 }
 function toggleAuto(){
- enabled=!enabled;localStorage.setItem(AUTO_KEY,String(enabled));
- record('Automatic saving '+(enabled?'enabled':'disabled'));
- if(enabled&&linked)saveNow();
- notice(enabled?'Auto Save enabled':'Auto Save turned off','info');
+ enabled=!enabled;
+ try{localStorage.setItem(AUTO_KEY,String(enabled))}catch{}
+ record('Auto Save '+(enabled?'ON':'OFF'));
+ if(enabled)saveNow();
+ else notice('Auto Save paused. Existing saved files are preserved.','warning');
 }
 function statusInfo(){
- return {linked,enabled,folder:root?.name||null,remembered,lastSaved,status,canPick:canPick(),uploads:uploadCounts};
+ return {ready,backend,enabled,linked,folder:external?.name||null,remembered,lastSaved,status,warning,uploads,canPick:canPick()};
 }
 function render(){
- const s=statusInfo(),isSaving=s.linked&&s.enabled;
- return '<div class="headrow"><div><div class="eyebrow">TOOLS & SETTINGS / PRIVATE COMPUTER STORAGE</div><h1>Jim’s Local Data Manager</h1><p>Store Tableau reports, dashboard changes, backups and exports in a folder Jim chooses on his own computer.</p></div></div>'+
- '<section class="panel local-manager-card"><div class="local-manager-top"><span class="local-manager-glow" aria-hidden="true"></span><div class="local-manager-head"><div class="local-manager-icon">✦</div><div><div class="panel-title">My Computer Save Center</div><div class="panel-sub">'+(s.linked?'Folder linked: '+esc(s.folder):'No computer folder selected yet')+'</div></div></div><span class="local-manager-badge '+(isSaving?'linked':'')+'">'+(isSaving?'AUTO SAVE ON':s.linked?'AUTO SAVE OFF':'FOLDER NOT LINKED')+'</span></div>'+
- '<p class="local-manager-state" aria-live="polite">'+esc(s.status)+(s.lastSaved?' · Last saved '+new Date(s.lastSaved).toLocaleString():'')+'</p>'+'<p class="local-manager-permanence">'+(s.folder?'Remembered folder: <strong>'+esc(s.folder)+'</strong>. '+(s.linked?'Files will be saved here while access is granted.':'Click <strong>Reconnect Saved Folder</strong> to reauthorize this same location without selecting it again.'):'Choose a folder on your computer once. This browser remembers it for later visits; it may ask to authorize access again.')+'</p>'+
- '<div class="local-manager-actions"><button class="btn primary" data-action="local-choose">'+(s.linked?'Save to Selected Folder':s.folder?'Reconnect Saved Folder':'Choose My Folder')+'</button><button class="btn" data-action="local-change-folder">Change Folder</button><button class="btn" data-action="local-save" '+(!s.linked?'disabled':'')+'>Save Everything Now</button><button class="btn" data-action="local-restore" '+(!s.linked?'disabled':'')+'>Restore Latest Backup</button><button class="btn" data-action="local-download">Download Backup</button><button class="btn" data-action="local-upload-backup">Import Backup File</button><button class="btn" data-action="local-toggle-auto">'+(s.enabled?'Turn Auto Save Off':'Turn Auto Save On')+'</button></div>'+
+ const s=statusInfo(),auto=s.ready&&s.enabled;
+ const rows=filesView?.map(path=>'<div class="local-saved-row"><span>'+esc(path)+'</span><button type="button" class="btn" data-action="local-download-file" data-path="'+esc(path)+'">Download</button></div>').join('');
+ return '<div class="headrow"><div><div class="eyebrow">TOOLS & SETTINGS / PRIVATE COMPUTER STORAGE</div><h1>Jim’s Local Data Manager</h1><p>Your data is saved automatically in this browser — no Windows Downloads folder permission required.</p></div></div>'+
+ '<section class="panel local-manager-card"><div class="local-manager-top"><div class="local-manager-head"><div class="local-manager-icon">✦</div><div><div class="panel-title">Automatic Local Save Center</div><div class="panel-sub">'+(s.ready?'Jim-WFM-Data / '+DIRS.length+' folders created automatically': 'Preparing secure local storage…')+'</div></div></div><span class="local-manager-badge '+(auto?'linked':'')+'">'+(auto?'AUTO SAVE ON':s.ready?'AUTO SAVE PAUSED':'STORAGE NOT READY')+'</span></div>'+
+ '<p class="local-manager-state" aria-live="polite">'+esc(s.status)+(s.lastSaved?' · Last saved '+new Date(s.lastSaved).toLocaleString():'')+'</p>'+
+ '<p class="local-manager-permanence">'+(s.ready?'Jim WFM automatically creates and saves its own local data without choosing a Windows system folder. This is private browser storage, not a visible folder under Downloads.':'Your browser must allow this website to keep site data.')+'</p>'+
+ '<div class="local-manager-actions"><button class="btn primary" data-action="local-save">Save Everything Now</button><button class="btn" data-action="local-list">View Saved Files</button><button class="btn" data-action="local-download">Download Backup to Computer</button><button class="btn" data-action="local-restore">Restore Latest Backup</button><button class="btn" data-action="local-upload-backup">Import Backup File</button><button class="btn" data-action="local-toggle-auto">'+(s.enabled?'Turn Auto Save Off':'Turn Auto Save On')+'</button></div>'+
  '<input type="file" id="local-backup-input" accept=".json" hidden/>'+
  '<div class="local-manager-folders">'+DIRS.map(n=>'<span>'+esc(n)+'</span>').join('')+'</div>'+
- '<div class="notice local-manager-notice">Browser folder access requires a supported Chrome or Edge browser over HTTPS. You must grant write permission; the browser may ask again. Until linked, Jim WFM keeps using its existing browser storage. If file saving fails, the status changes to a warning. This page cannot save the private password vault or files from other applications.</div>'+
- '</section><section class="panel section-gap"><div class="panel-title">What gets saved?</div><p>Imported Excel originals after successful import, historical service aggregates, demo agent edits, settings, shifts, targets, browser backups, CSV exports, and a recent-actions log. Changes save automatically when Auto Save is on and the folder remains authorized.</p><p class="footnote">Keep this folder private: uploaded Tableau workbooks may contain employee information. File permissions are controlled by Windows and the user, not by Jim WFM.</p></section>';
+ (filesView?'<div class="local-saved-files"><strong>Saved on this browser ('+filesView.length+')</strong>'+ (rows||'<p>No saved files yet.</p>')+'</div>':'')+
+ '<div class="local-manager-external"><div><strong>Optional Windows folder copy</strong><p>To also see the files directly in File Explorer, choose a normal folder such as Documents/Jim-WFM-Data. Windows blocks websites from selecting protected system folders like Downloads itself.</p><p>'+(s.folder?'Remembered folder: <strong>'+esc(s.folder)+'</strong> '+(s.linked?'(connected)':'(permission needed)'):'No Windows folder connected; automatic browser saving continues.')+'</p></div><div class="local-manager-actions"><button class="btn" data-action="local-choose">'+(s.folder?'Reconnect Windows Folder':'Also Save to a Windows Folder')+'</button><button class="btn" data-action="local-change-folder">Change Windows Folder</button></div></div>'+
+ '<div class="notice local-manager-notice">Private browser files survive normal browser restarts in this browser profile, but deleting site data, using Incognito, or storage eviction can remove them. Download a backup periodically. Uploaded source spreadsheets may contain employee information; keep downloads in an approved private folder.</div>'+
+ '</section><section class="panel section-gap"><div class="panel-title">Automatically saved items</div><p>Original successfully imported Tableau Excel reports, 30-day and historical aggregates, dashboard edits, local configuration, shift and target changes, private backups, exports, and logs. Browser-only demo data is separate from real Tableau history.</p></section>';
 }
 async function init(){
- if(booted)return;booted=true;
- const found=await loadHandle();
- if(!found)return;
- root=found;remembered=true;
- if(await granted(found)){linked=true;notice('Saved folder '+found.name+' ready for Auto Save','success')}
- else notice('Saved folder '+found.name+' remembered. Click Reconnect Saved Folder once if the browser asks for permission.','warning');
+ if(booted)return;
+ booted=true;
+ await initializeStorage();
+ const savedFolder=await retrieveFolder();
+ if(savedFolder){
+  external=savedFolder;remembered=true;linked=await hasPermission(external);
+  if(!linked)warning='The Windows folder is remembered but may need permission again. Browser saving is not affected.';
+ }
+ if(ready){
+  notice(backend==='private-filesystem'?'Automatic browser folders ready — no folder selection needed':'Automatic private storage ready — no folder selection needed','success');
+  if(enabled)enqueue(()=>saveInternal('Startup autosave')).catch(()=>{});
+ }else notice(warning||'Local storage unavailable','error');
 }
-window.JimLocalData={init,render,chooseFolder,saveNow,changed,archiveFiles,archiveExport,restoreLatest,restoreJSON,exportBackup,toggleAuto,statusInfo,notice};
-window.addEventListener('DOMContentLoaded',()=>{init().catch(()=>{})});
+window.JimLocalData={init,render,chooseFolder,saveNow,changed,archiveFiles,archiveExport,restoreLatest,restoreJSON,exportBackup,toggleAuto,statusInfo,notice,listSaved,downloadSaved};
+window.addEventListener('DOMContentLoaded',()=>{init().catch(e=>notice('Storage setup failed: '+String(e.message||e),'error'))});
 })();
